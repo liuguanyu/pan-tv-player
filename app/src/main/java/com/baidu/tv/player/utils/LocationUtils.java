@@ -103,84 +103,117 @@ public class LocationUtils {
      * 支持多种视频元数据格式
      */
     public static String getLocationFromVideo(Context context, String videoUrl) {
-        Log.d(TAG, GPS_DEBUG + "========== 开始提取视频GPS信息 ==========");
+        Log.d(TAG, GPS_DEBUG + "========== 开始并行提取视频GPS信息 ==========");
         Log.d(TAG, GPS_DEBUG + "视频URL: " + videoUrl);
         
-        // 步骤1: 尝试使用MediaMetadataRetriever（支持部分标准MP4元数据）
-        Log.d(TAG, GPS_DEBUG + "步骤1: 使用MediaMetadataRetriever提取元数据");
-        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-        try {
-            // 注意：对于网络视频，setDataSource可能会阻塞，且如果不需要完整下载
-            // 最好使用本地代理或只下载文件头的方式。这里先尝试直接设置URL
-            // 百度网盘链接可能需要Headers
-            java.util.HashMap<String, String> headers = new java.util.HashMap<>();
-            headers.put("User-Agent", "pan.baidu.com");
-            retriever.setDataSource(videoUrl, headers);
-            
-            String locationString = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION);
-            Log.d(TAG, GPS_DEBUG + "  - METADATA_KEY_LOCATION: " + locationString);
-            
-            if (locationString != null) {
-                // ISO-6709 格式: +37.7749-122.4194/
-                // 解析这个字符串
-                Log.d(TAG, GPS_DEBUG + "✅ 成功: 从MediaMetadataRetriever获得位置字符串: " + locationString);
-                String location = parseLocationString(context, locationString);
-                if (location != null) {
+        // 使用并行执行多种提取策略，一旦有一种成功就停止其他任务
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(3);
+        java.util.List<java.util.concurrent.Callable<String>> tasks = new java.util.ArrayList<>();
+        
+        // 任务1: 使用MediaMetadataRetriever（支持部分标准MP4元数据）
+        tasks.add(() -> {
+            Log.d(TAG, GPS_DEBUG + "[任务1] 开始使用MediaMetadataRetriever提取元数据");
+            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+            try {
+                // 注意：对于网络视频，setDataSource可能会阻塞，且如果不需要完整下载
+                // 最好使用本地代理或只下载文件头的方式。这里先尝试直接设置URL
+                // 百度网盘链接可能需要Headers
+                java.util.HashMap<String, String> headers = new java.util.HashMap<>();
+                headers.put("User-Agent", "pan.baidu.com");
+                retriever.setDataSource(videoUrl, headers);
+                
+                String locationString = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION);
+                Log.d(TAG, GPS_DEBUG + "[任务1] METADATA_KEY_LOCATION: " + locationString);
+                
+                if (locationString != null) {
+                    // ISO-6709 格式: +37.7749-122.4194/
+                    // 解析这个字符串
+                    Log.d(TAG, GPS_DEBUG + "[任务1] ✅ 成功: 从MediaMetadataRetriever获得位置字符串: " + locationString);
+                    String location = parseLocationString(context, locationString);
+                    if (location != null) {
+                        return location;
+                    }
+                } else {
+                    Log.d(TAG, GPS_DEBUG + "[任务1] 未找到标准位置元数据");
+                }
+                
+                // 打印其他元数据帮助调试
+                String date = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE);
+                String rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
+                Log.d(TAG, GPS_DEBUG + "[任务1] METADATA_KEY_DATE: " + date);
+                Log.d(TAG, GPS_DEBUG + "[任务1] METADATA_KEY_VIDEO_ROTATION: " + rotation);
+                
+            } catch (Exception e) {
+                Log.e(TAG, GPS_DEBUG + "[任务1] MediaMetadataRetriever提取失败: " + e.getMessage());
+            } finally {
+                try {
                     retriever.release();
-                    return location;
+                } catch (Exception e) {
+                    // ignore
+                }
+            }
+            
+            // 尝试解析 ISO6709 格式的字符串，这在Apple设备中很常见
+            // Apple设备通常将位置存储为 "+22.5430+114.0578+000.000/" 格式
+            
+            // 如果上述方法都失败了，我们再尝试更激进的方法：
+            // 尝试读取文件的特定字节（但这在流媒体中很难实现）
+            
+            // 方法4: 尝试从视频文件的EXIF数据中提取（如果视频包含嵌入的EXIF）
+            // 对于流媒体，尝试下载文件头部分来解析元数据
+            throw new Exception("MediaMetadataRetriever未找到GPS信息");
+        });
+        
+        // 任务2: 从视频文件头提取GPS信息
+        tasks.add(() -> {
+            if (videoUrl != null && videoUrl.startsWith("http")) {
+                Log.d(TAG, GPS_DEBUG + "[任务2] 开始从文件头提取GPS信息");
+                String locationFromHeader = getLocationFromVideoHeader(context, videoUrl);
+                if (locationFromHeader != null) {
+                    Log.d(TAG, GPS_DEBUG + "[任务2] ✅ 成功: 从文件头解析到位置: " + locationFromHeader);
+                    return locationFromHeader;
+                } else {
+                    Log.d(TAG, GPS_DEBUG + "[任务2] 文件头中未找到GPS信息");
                 }
             } else {
-                Log.d(TAG, GPS_DEBUG + "  - 未找到标准位置元数据");
+                Log.d(TAG, GPS_DEBUG + "[任务2] 跳过文件头提取（非HTTP URL）");
             }
-            
-            // 打印其他元数据帮助调试
-            String date = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE);
-            String rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
-            Log.d(TAG, GPS_DEBUG + "  - METADATA_KEY_DATE: " + date);
-            Log.d(TAG, GPS_DEBUG + "  - METADATA_KEY_VIDEO_ROTATION: " + rotation);
-            
-        } catch (Exception e) {
-            Log.e(TAG, GPS_DEBUG + "MediaMetadataRetriever提取失败: " + e.getMessage());
-        } finally {
-            try {
-                retriever.release();
-            } catch (Exception e) {
-                // ignore
-            }
-        }
+            throw new Exception("文件头提取未找到GPS信息");
+        });
         
-        // 尝试解析 ISO6709 格式的字符串，这在Apple设备中很常见
-        // Apple设备通常将位置存储为 "+22.5430+114.0578+000.000/" 格式
-        
-        // 如果上述方法都失败了，我们再尝试更激进的方法：
-        // 尝试读取文件的特定字节（但这在流媒体中很难实现）
-        
-        // 方法4: 尝试从视频文件的EXIF数据中提取（如果视频包含嵌入的EXIF）
-        // 对于流媒体，尝试下载文件头部分来解析元数据
-        if (videoUrl != null && videoUrl.startsWith("http")) {
-            Log.d(TAG, GPS_DEBUG + "步骤2: 尝试从文件头提取GPS信息");
-            String locationFromHeader = getLocationFromVideoHeader(context, videoUrl);
-            if (locationFromHeader != null) {
-                Log.d(TAG, GPS_DEBUG + "✅ 成功: 从文件头解析到位置: " + locationFromHeader);
-                return locationFromHeader;
-            } else {
-                Log.d(TAG, GPS_DEBUG + "  - 文件头中未找到GPS信息");
-                
-                // 尝试从文件尾部提取（moov原子可能在文件末尾）
-                Log.d(TAG, GPS_DEBUG + "步骤3: 尝试从文件尾部提取GPS信息");
+        // 任务3: 从视频文件尾部提取GPS信息
+        tasks.add(() -> {
+            if (videoUrl != null && videoUrl.startsWith("http")) {
+                Log.d(TAG, GPS_DEBUG + "[任务3] 开始从文件尾部提取GPS信息");
                 String locationFromTail = getLocationFromVideoTail(context, videoUrl);
                 if (locationFromTail != null) {
-                    Log.d(TAG, GPS_DEBUG + "✅ 成功: 从文件尾部解析到位置: " + locationFromTail);
+                    Log.d(TAG, GPS_DEBUG + "[任务3] ✅ 成功: 从文件尾部解析到位置: " + locationFromTail);
                     return locationFromTail;
                 } else {
-                    Log.d(TAG, GPS_DEBUG + "  - 文件尾部中未找到GPS信息");
+                    Log.d(TAG, GPS_DEBUG + "[任务3] 文件尾部中未找到GPS信息");
                 }
+            } else {
+                Log.d(TAG, GPS_DEBUG + "[任务3] 跳过文件尾部提取（非HTTP URL）");
             }
-        } else {
-            Log.d(TAG, GPS_DEBUG + "  - 跳过文件头提取（非HTTP URL）");
+            throw new Exception("文件尾部提取未找到GPS信息");
+        });
+        
+        try {
+            // invokeAny会在第一个任务成功返回时取消其他任务
+            String result = executor.invokeAny(tasks);
+            Log.d(TAG, GPS_DEBUG + "✅ 并行提取成功，结果: " + result);
+            executor.shutdown();
+            return result;
+        } catch (java.util.concurrent.ExecutionException e) {
+            Log.d(TAG, GPS_DEBUG + "❌ 所有并行提取任务均失败: " + e.getCause().getMessage());
+        } catch (InterruptedException e) {
+            Log.d(TAG, GPS_DEBUG + "❌ 并行提取被中断: " + e.getMessage());
+            Thread.currentThread().interrupt();
+        } finally {
+            executor.shutdownNow();
         }
         
-        Log.d(TAG, GPS_DEBUG + "❌ 失败: 所有方法均未找到GPS信息");
+        Log.d(TAG, GPS_DEBUG + "❌ 失败: 所有并行方法均未找到GPS信息");
         Log.d(TAG, GPS_DEBUG + "========== GPS提取结束 ==========");
         return null;
     }

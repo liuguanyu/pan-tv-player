@@ -235,8 +235,8 @@ public class FileInfo implements Parcelable {
     public boolean isVideo() {
         if (serverFilename == null) return false;
         String ext = getExtension().toLowerCase();
-        return ext.equals("mp4") || ext.equals("mov") || ext.equals("3gp") || 
-               ext.equals("mkv") || ext.equals("avi");
+        return ext.equals("mp4") || ext.equals("mov") || ext.equals("3gp") ||
+               ext.equals("mkv") || ext.equals("avi") || ext.equals("m4v");
     }
 
     /**
