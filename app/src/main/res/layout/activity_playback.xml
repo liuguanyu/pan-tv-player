@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_gravity="center"
+    android:background="@android:color/black"
+    android:keepScreenOn="true">
+
+    <!-- VLC视频播放器容器 -->
+    <SurfaceView
+        android:id="@+id/surface_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center" />
+        
+    <!-- ExoPlayer视频播放器容器（备用） -->
+    <com.google.android.exoplayer2.ui.PlayerView
+        android:id="@+id/player_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center"
+        android:padding="0dp"
+        android:layout_margin="0dp"
+        app:use_controller="false"
+        app:resize_mode="fill"
+        android:visibility="gone" />
+
+    <!-- 图片展示容器 -->
+    <ImageView
+        android:id="@+id/iv_image_display"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter"
+        android:visibility="gone" />
+
+    <!-- 浮动地点信息 (独立显示，不随控制层显隐) -->
+    <TextView
+        android:id="@+id/tv_location"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="24dp"
+        android:layout_marginEnd="24dp"
+        android:textColor="@android:color/white"
+        android:textSize="20sp"
+        android:drawableStart="@android:drawable/ic_menu_mylocation"
+        android:drawablePadding="8dp"
+        android:padding="12dp"
+        android:shadowColor="#000000"
+        android:shadowDx="2"
+        android:shadowDy="2"
+        android:shadowRadius="4"
+        android:elevation="8dp"
+        android:visibility="gone"
+        tools:text="北京市海淀区"
+        tools:visibility="visible" />
+
+    <!-- 控制层 -->
+    <RelativeLayout
+        android:id="@+id/layout_controls"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#40000000"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <!-- 顶部信息 -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="24dp">
+
+            <TextView
+                android:id="@+id/tv_file_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@android:color/white"
+                android:textSize="24sp"
+                tools:text="FileName.mp4" />
+        </RelativeLayout>
+
+        <!-- 底部控制栏 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:orientation="vertical"
+            android:padding="24dp">
+            
+            <!-- 进度条 -->
+            <SeekBar
+                android:id="@+id/seekbar_progress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/tv_current_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@android:color/white"
+                    android:textSize="18sp"
+                    tools:text="00:00" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+                    
+                <!-- 播放模式 -->
+                <ImageView
+                    android:id="@+id/iv_play_mode"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="24dp"
+                    android:src="@android:drawable/ic_menu_sort_by_size"
+                    android:contentDescription="播放模式" />
+
+                <!-- 上一个 -->
+                <ImageView
+                    android:id="@+id/iv_prev"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginEnd="24dp"
+                    android:src="@android:drawable/ic_media_previous"
+                    android:contentDescription="上一个" />
+
+                <!-- 播放/暂停 -->
+                <ImageView
+                    android:id="@+id/iv_play_pause"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:layout_marginEnd="24dp"
+                    android:src="@android:drawable/ic_media_play"
+                    android:contentDescription="播放/暂停" />
+
+                <!-- 下一个 -->
+                <ImageView
+                    android:id="@+id/iv_next"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginEnd="24dp"
+                    android:src="@android:drawable/ic_media_next"
+                    android:contentDescription="下一个" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:id="@+id/tv_total_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@android:color/white"
+                    android:textSize="18sp"
+                    tools:text="05:30" />
+            </LinearLayout>
+        </LinearLayout>
+    </RelativeLayout>
+    
+    <!-- 加载中 -->
+    <ProgressBar
+        android:id="@+id/loading_indicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:visibility="gone" />
+
+</FrameLayout>

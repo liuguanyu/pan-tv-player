@@ -1,0 +1,20 @@
+<resources>
+    <!-- Base application theme -->
+    <style name="Theme.BaiduTVPlayer" parent="Theme.Leanback">
+        <item name="android:colorPrimary">#1E88E5</item>
+        <item name="android:colorPrimaryDark">#1565C0</item>
+        <item name="android:colorAccent">#FF4081</item>
+    </style>
+
+    <!-- Leanback theme -->
+    <style name="Theme.BaiduTVPlayer.Leanback" parent="Theme.Leanback">
+        <item name="android:colorPrimary">#1E88E5</item>
+        <item name="android:windowBackground">@color/black</item>
+    </style>
+
+    <!-- Fullscreen theme for player -->
+    <style name="Theme.BaiduTVPlayer.Fullscreen" parent="Theme.Leanback">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">@color/black</item>
+    </style>
+</resources>

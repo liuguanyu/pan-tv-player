@@ -1,0 +1,39 @@
+<resources>
+    <string name="app_name">百度网盘TV播放器</string>
+    
+    <!-- 登录相关 -->
+    <string name="login_title">登录百度网盘</string>
+    <string name="login_instruction">请使用手机百度网盘APP扫描二维码登录</string>
+    <string name="login_retry">重新获取二维码</string>
+    <string name="login_success">登录成功</string>
+    <string name="login_failed">登录失败</string>
+    <string name="login_waiting">等待授权中...</string>
+    
+    <!-- 主界面 -->
+    <string name="main_title">百度网盘播放器</string>
+    <string name="category_images">图片</string>
+    <string name="category_videos">视频</string>
+    <string name="category_all">全部</string>
+    <string name="recent_tasks">最近任务</string>
+    
+    <!-- 播放器 -->
+    <string name="player_title">播放器</string>
+    <string name="player_mode_sequence">顺序播放</string>
+    <string name="player_mode_random">随机播放</string>
+    <string name="player_mode_single">单个播放</string>
+    
+    <!-- 设置 -->
+    <string name="settings_title">设置</string>
+    <string name="settings_image_effects">图片特效</string>
+    <string name="settings_effect_duration">特效时长</string>
+    <string name="settings_display_duration">展示时长</string>
+    <string name="settings_show_location">显示地点</string>
+    
+    <!-- 通用 -->
+    <string name="loading">加载中...</string>
+    <string name="error_occurred">发生错误</string>
+    <string name="retry">重试</string>
+    <string name="cancel">取消</string>
+    <string name="ok">确定</string>
+    <string name="thumbnail">缩略图</string>
+</resources>

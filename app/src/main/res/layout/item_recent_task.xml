@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="280dp"
+    android:layout_height="160dp"
+    android:layout_marginEnd="16dp"
+    android:focusable="true"
+    app:cardCornerRadius="12dp"
+    app:cardBackgroundColor="@color/surface">
+
+    <!-- 背景图片占位符 -->
+    <ImageView
+        android:id="@+id/iv_background"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:background="#333333"
+        android:contentDescription="@string/thumbnail" />
+
+    <!-- 渐变遮罩 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/card_gradient_overlay" />
+
+    <!-- 信息区域 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <TextView
+            android:id="@+id/tv_folder_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="文件夹名称"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="@color/white"
+            android:maxLines="1"
+            android:ellipsize="end"/>
+
+        <TextView
+            android:id="@+id/tv_folder_path"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="/路径/到/文件夹"
+            android:textSize="12sp"
+            android:textColor="#CCCCCC"
+            android:maxLines="1"
+            android:ellipsize="middle"
+            android:layout_marginTop="2dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="4dp">
+
+            <TextView
+                android:id="@+id/tv_media_type"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="图片"
+                android:textSize="10sp"
+                android:textColor="@color/white"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp"
+                android:background="#80FF4081"/>
+
+            <TextView
+                android:id="@+id/tv_file_count"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="10个文件"
+                android:textSize="10sp"
+                android:textColor="#CCCCCC"
+                android:layout_marginStart="8dp"/>
+        </LinearLayout>
+    </LinearLayout>
+</androidx.cardview.widget.CardView>
