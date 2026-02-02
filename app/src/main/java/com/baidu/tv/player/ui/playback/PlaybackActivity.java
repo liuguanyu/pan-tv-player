@@ -683,6 +683,13 @@ public class PlaybackActivity extends FragmentActivity {
         // 停止之前的播放
         stopCurrentPlayback();
         
+        // 立即隐藏之前的地点信息
+        tvLocation.setVisibility(View.GONE);
+        tvLocation.setAlpha(1.0f); // 重置透明度
+        if (locationHandler != null && locationRunnable != null) {
+            locationHandler.removeCallbacks(locationRunnable);
+        }
+        
         // 显示加载指示器
         loadingIndicator.setVisibility(View.VISIBLE);
         

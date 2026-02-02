@@ -51,6 +51,10 @@ public class PlaybackViewModel extends AndroidViewModel {
     // 准备好的媒体URL (用于播放)
     private MutableLiveData<String> preparedMediaUrl;
     private FileRepository fileRepository;
+    
+    // 预加载相关
+    private String preloadedDlink = null;
+    private int preloadedIndex = -1;
 
     public PlaybackViewModel(@NonNull Application application) {
         super(application);
@@ -132,7 +136,32 @@ public class PlaybackViewModel extends AndroidViewModel {
             return;
         }
 
-        // 如果dlink已经存在且有效（以http开头），直接使用
+        // 1. 检查是否有预加载的dlink
+        Integer currentIndexVal = currentIndex.getValue();
+        if (currentIndexVal != null && currentIndexVal == preloadedIndex && preloadedDlink != null) {
+            Log.d("PlaybackViewModel", "命中预加载缓存，索引: " + preloadedIndex);
+            
+            String finalUrl = preloadedDlink;
+            // 确保token是最新的
+            if (finalUrl.contains("access_token=")) {
+                // 替换现有token
+                finalUrl = finalUrl.replaceAll("access_token=[^&]*", "access_token=" + accessToken);
+            } else {
+                finalUrl += (finalUrl.contains("?") ? "&" : "?") + "access_token=" + accessToken;
+            }
+            
+            preparedMediaUrl.setValue(finalUrl);
+            
+            // 清除使用的缓存
+            preloadedDlink = null;
+            preloadedIndex = -1;
+            
+            // 触发下一次预加载
+            preloadNextFile(accessToken);
+            return;
+        }
+
+        // 2. 如果dlink已经存在且有效（以http开头），直接使用
         String currentDlink = file.getDlink();
         if (currentDlink != null && !currentDlink.isEmpty() && currentDlink.startsWith("http")) {
             Log.d("PlaybackViewModel", "使用现有的dlink: " + currentDlink);
@@ -141,6 +170,9 @@ public class PlaybackViewModel extends AndroidViewModel {
                 finalUrl += (finalUrl.contains("?") ? "&" : "?") + "access_token=" + accessToken;
             }
             preparedMediaUrl.setValue(finalUrl);
+            
+            // 触发预加载
+            preloadNextFile(accessToken);
             return;
         } else {
             if (currentDlink != null) {
@@ -148,7 +180,7 @@ public class PlaybackViewModel extends AndroidViewModel {
             }
         }
 
-        // 否则，通过API获取文件详情
+        // 3. 否则，通过API获取文件详情
         Log.d("PlaybackViewModel", "正在获取文件详情以获取dlink, fsId=" + file.getFsId());
         fileRepository.fetchFileDetail(accessToken, file.getFsId(), new FileRepository.FileDetailCallback() {
             @Override
@@ -159,8 +191,6 @@ public class PlaybackViewModel extends AndroidViewModel {
                 if (dlink != null && !dlink.isEmpty()) {
                     if (!dlink.startsWith("http")) {
                         Log.e("PlaybackViewModel", "API返回的dlink无效(不是http开头): " + dlink);
-                        // 尝试构建一个临时的dlink（虽然可能无法工作，但比路径好）
-                        // 或者直接报错
                         preparedMediaUrl.setValue(null);
                         return;
                     }
@@ -172,16 +202,89 @@ public class PlaybackViewModel extends AndroidViewModel {
                     }
                     Log.d("PlaybackViewModel", "准备播放URL: " + finalUrl);
                     preparedMediaUrl.setValue(finalUrl);
+                    
+                    // 触发预加载
+                    preloadNextFile(accessToken);
                 } else {
                     Log.e("PlaybackViewModel", "获取到的dlink为空: " + fileInfo.getPath());
-                    preparedMediaUrl.setValue(null); // 或者设置一个错误状态
+                    preparedMediaUrl.setValue(null);
                 }
             }
 
             @Override
             public void onFailure(String error) {
                 Log.e("PlaybackViewModel", "获取文件详情失败: " + error);
-                preparedMediaUrl.setValue(null); // 或者设置一个错误状态
+                preparedMediaUrl.setValue(null);
+            }
+        });
+    }
+
+    /**
+     * 预加载下一个文件
+     */
+    private void preloadNextFile(String accessToken) {
+        List<FileInfo> files = playList.getValue();
+        if (files == null || files.isEmpty()) return;
+        
+        Integer current = currentIndex.getValue();
+        if (current == null) return;
+        
+        // 计算下一个索引
+        int nextIndex;
+        PlayMode mode = playMode.getValue();
+        if (mode == null) mode = PlayMode.SEQUENTIAL;
+        
+        switch (mode) {
+            case SEQUENTIAL:
+                nextIndex = (current + 1) % files.size();
+                break;
+            case REVERSE:
+                nextIndex = (current - 1 + files.size()) % files.size();
+                break;
+            case RANDOM:
+                nextIndex = getNextRandomIndex(current);
+                break;
+            case SINGLE:
+                nextIndex = current; // 单曲循环预加载自己
+                break;
+            default:
+                nextIndex = (current + 1) % files.size();
+        }
+        
+        // 如果只有一个文件且不是单曲循环，不需要预加载
+        if (files.size() <= 1 && mode != PlayMode.SINGLE) return;
+        
+        // 如果已经是预加载的索引，跳过
+        if (nextIndex == preloadedIndex && preloadedDlink != null) return;
+        
+        FileInfo nextFile = files.get(nextIndex);
+        
+        // 如果已经有dlink，不需要请求API，但可以缓存索引
+        if (nextFile.getDlink() != null && nextFile.getDlink().startsWith("http")) {
+            preloadedDlink = nextFile.getDlink();
+            preloadedIndex = nextIndex;
+            Log.d("PlaybackViewModel", "预加载完成(使用现有dlink)，索引: " + nextIndex);
+            return;
+        }
+        
+        Log.d("PlaybackViewModel", "开始预加载下一个文件，索引: " + nextIndex + ", 文件: " + nextFile.getServerFilename());
+        
+        // 异步获取详情
+        final int targetIndex = nextIndex;
+        fileRepository.fetchFileDetail(accessToken, nextFile.getFsId(), new FileRepository.FileDetailCallback() {
+            @Override
+            public void onSuccess(FileInfo fileInfo) {
+                String dlink = fileInfo.getDlink();
+                if (dlink != null && !dlink.isEmpty() && dlink.startsWith("http")) {
+                    preloadedDlink = dlink;
+                    preloadedIndex = targetIndex;
+                    Log.d("PlaybackViewModel", "预加载成功，索引: " + targetIndex);
+                }
+            }
+
+            @Override
+            public void onFailure(String error) {
+                Log.w("PlaybackViewModel", "预加载失败: " + error);
             }
         });
     }
@@ -271,6 +374,12 @@ public class PlaybackViewModel extends AndroidViewModel {
         }
 
         currentIndex.setValue(nextIndex);
+        
+        // 清除预加载缓存（如果需要）
+        if (preloadedIndex != nextIndex) {
+            preloadedDlink = null;
+            preloadedIndex = -1;
+        }
     }
 
     /**
@@ -307,6 +416,12 @@ public class PlaybackViewModel extends AndroidViewModel {
         }
 
         currentIndex.setValue(prevIndex);
+        
+        // 清除预加载缓存（如果需要）
+        if (preloadedIndex != prevIndex) {
+            preloadedDlink = null;
+            preloadedIndex = -1;
+        }
     }
 
     /**
