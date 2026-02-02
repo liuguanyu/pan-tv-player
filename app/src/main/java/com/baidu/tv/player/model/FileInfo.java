@@ -44,6 +44,9 @@ public class FileInfo implements Parcelable {
     
     private String dlink;
 
+    public FileInfo() {
+    }
+
     // Parcelable构造函数
     protected FileInfo(Parcel in) {
         fsId = in.readLong();
@@ -219,8 +222,15 @@ public class FileInfo implements Parcelable {
 
     /**
      * 是否是图片
+     * 优先使用百度网盘API的category字段(3=图片)，其次检查文件扩展名
      */
     public boolean isImage() {
+        // 优先使用百度API的category字段判断
+        if (category == 3) {
+            return true;
+        }
+        
+        // 如果category不是图片，再通过扩展名判断
         if (serverFilename == null) return false;
         String ext = getExtension().toLowerCase();
         return ext.equals("jpg") || ext.equals("jpeg") || ext.equals("png") ||
@@ -231,12 +241,20 @@ public class FileInfo implements Parcelable {
 
     /**
      * 是否是视频
+     * 优先使用百度网盘API的category字段(1=视频)，其次检查文件扩展名
      */
     public boolean isVideo() {
+        // 优先使用百度API的category字段判断
+        if (category == 1) {
+            return true;
+        }
+        
+        // 如果category不是视频，再通过扩展名判断
         if (serverFilename == null) return false;
         String ext = getExtension().toLowerCase();
         return ext.equals("mp4") || ext.equals("mov") || ext.equals("3gp") ||
-               ext.equals("mkv") || ext.equals("avi") || ext.equals("m4v");
+               ext.equals("mkv") || ext.equals("avi") || ext.equals("m4v") ||
+               ext.equals("flv") || ext.equals("wmv") || ext.equals("webm");
     }
 
     /**

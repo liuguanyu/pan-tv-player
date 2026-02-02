@@ -13,6 +13,7 @@ import androidx.fragment.app.FragmentActivity;
 import com.baidu.tv.player.R;
 import com.baidu.tv.player.auth.LoginActivity;
 import com.baidu.tv.player.model.ImageEffect;
+import com.baidu.tv.player.model.PlayMode;
 import com.baidu.tv.player.utils.PreferenceUtils;
 
 /**
@@ -24,6 +25,7 @@ public class SettingsActivity extends FragmentActivity {
     private SeekBar seekbarDisplayDuration;
     private TextView tvDisplayDuration;
     private Switch switchShowLocation;
+    private RadioGroup rgPlayMode;
     private Button btnLogout;
 
     @Override
@@ -41,6 +43,7 @@ public class SettingsActivity extends FragmentActivity {
         seekbarDisplayDuration = findViewById(R.id.seekbar_display_duration);
         tvDisplayDuration = findViewById(R.id.tv_display_duration);
         switchShowLocation = findViewById(R.id.switch_show_location);
+        rgPlayMode = findViewById(R.id.rg_play_mode);
         btnLogout = findViewById(R.id.btn_logout);
     }
 
@@ -60,6 +63,9 @@ public class SettingsActivity extends FragmentActivity {
             case 3:
                 rgImageEffect.check(R.id.rb_effect_bounce);
                 break;
+            case 4:
+                rgImageEffect.check(R.id.rb_effect_random);
+                break;
         }
         
         // 加载图片展示时长设置（毫秒转换为秒）
@@ -70,6 +76,23 @@ public class SettingsActivity extends FragmentActivity {
         // 加载地点显示设置
         boolean showLocation = PreferenceUtils.getShowLocation(this);
         switchShowLocation.setChecked(showLocation);
+        
+        // 加载播放模式设置
+        int playMode = PreferenceUtils.getPlayMode(this);
+        switch (playMode) {
+            case 0:
+                rgPlayMode.check(R.id.rb_mode_sequential);
+                break;
+            case 1:
+                rgPlayMode.check(R.id.rb_mode_random);
+                break;
+            case 2:
+                rgPlayMode.check(R.id.rb_mode_single);
+                break;
+            case 3:
+                rgPlayMode.check(R.id.rb_mode_reverse);
+                break;
+        }
     }
 
     private void setupListeners() {
@@ -84,6 +107,8 @@ public class SettingsActivity extends FragmentActivity {
                 effect = ImageEffect.FLOAT.getValue();
             } else if (checkedId == R.id.rb_effect_bounce) {
                 effect = ImageEffect.BOUNCE.getValue();
+            } else if (checkedId == R.id.rb_effect_random) {
+                effect = ImageEffect.RANDOM.getValue();
             } else {
                 effect = ImageEffect.FADE.getValue();
             }
@@ -113,6 +138,23 @@ public class SettingsActivity extends FragmentActivity {
         // 地点显示开关
         switchShowLocation.setOnCheckedChangeListener((buttonView, isChecked) -> {
             PreferenceUtils.saveShowLocation(this, isChecked);
+        });
+        
+        // 播放模式选择
+        rgPlayMode.setOnCheckedChangeListener((group, checkedId) -> {
+            int mode;
+            if (checkedId == R.id.rb_mode_sequential) {
+                mode = PlayMode.SEQUENTIAL.getValue();
+            } else if (checkedId == R.id.rb_mode_reverse) {
+                mode = PlayMode.REVERSE.getValue();
+            } else if (checkedId == R.id.rb_mode_random) {
+                mode = PlayMode.RANDOM.getValue();
+            } else if (checkedId == R.id.rb_mode_single) {
+                mode = PlayMode.SINGLE.getValue();
+            } else {
+                mode = PlayMode.SEQUENTIAL.getValue();
+            }
+            PreferenceUtils.savePlayMode(this, mode);
         });
         
         // 退出登录

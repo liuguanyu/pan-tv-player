@@ -10,6 +10,7 @@ import androidx.lifecycle.MutableLiveData;
 import com.baidu.tv.player.auth.BaiduAuthService;
 import com.baidu.tv.player.model.FileInfo;
 import com.baidu.tv.player.repository.FileRepository;
+import com.baidu.tv.player.utils.PreferenceUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,10 +23,29 @@ import java.util.Comparator;
  */
 public class FileBrowserViewModel extends AndroidViewModel {
     public enum SortMode {
-        NAME_ASC,   // 文件名正序
-        NAME_DESC,  // 文件名倒序
-        DATE_ASC,   // 日期正序
-        DATE_DESC   // 日期倒序
+        NAME_ASC(0),   // 文件名正序
+        NAME_DESC(1),  // 文件名倒序
+        DATE_ASC(2),   // 日期正序
+        DATE_DESC(3);  // 日期倒序
+        
+        private final int value;
+        
+        SortMode(int value) {
+            this.value = value;
+        }
+        
+        public int toInt() {
+            return value;
+        }
+        
+        public static SortMode fromInt(int value) {
+            for (SortMode mode : values()) {
+                if (mode.value == value) {
+                    return mode;
+                }
+            }
+            return NAME_ASC; // 默认值
+        }
     }
 
     private FileRepository repository;
@@ -51,7 +71,10 @@ public class FileBrowserViewModel extends AndroidViewModel {
         isLoading = new MutableLiveData<>();
         errorMessage = new MutableLiveData<>();
         currentPath = new MutableLiveData<>();
-        sortMode = new MutableLiveData<>(SortMode.NAME_ASC); // 默认文件名正序
+        // 从SharedPreferences加载排序模式
+        int savedSortMode = PreferenceUtils.getFileSortMode(application);
+        sortMode = new MutableLiveData<>(SortMode.fromInt(savedSortMode));
+        
         pathStack = new Stack<>();
         mediaType = 2; // 默认全部
         isRecursive = false;
@@ -79,6 +102,9 @@ public class FileBrowserViewModel extends AndroidViewModel {
         }
         
         sortMode.setValue(next);
+        
+        // 保存排序模式
+        PreferenceUtils.saveFileSortMode(getApplication(), next.toInt());
         
         // 如果当前有文件列表，立即重新排序
         List<FileInfo> files = fileList.getValue();
@@ -111,6 +137,13 @@ public class FileBrowserViewModel extends AndroidViewModel {
             }
         });
     }
+    
+    // 添加获取递归状态的LiveData封装，以便Fragment可以观察
+    private MutableLiveData<Boolean> isRecursiveLiveData = new MutableLiveData<>(false);
+    
+    public LiveData<Boolean> getIsRecursive() {
+        return isRecursiveLiveData;
+    }
 
     public LiveData<List<FileInfo>> getFileList() {
         return fileList;
@@ -140,6 +173,7 @@ public class FileBrowserViewModel extends AndroidViewModel {
      */
     public void setRecursive(boolean recursive) {
         isRecursive = recursive;
+        isRecursiveLiveData.setValue(recursive);
     }
 
     /**

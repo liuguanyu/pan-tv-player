@@ -2,6 +2,7 @@
 package com.baidu.tv.player.ui.playback;
 
 import android.Manifest;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Geocoder;
 import android.media.MediaMetadataRetriever;
@@ -29,11 +30,16 @@ import com.baidu.tv.player.model.FileInfo;
 import com.baidu.tv.player.model.ImageEffect;
 import com.baidu.tv.player.model.PlayMode;
 import com.baidu.tv.player.model.PlaybackHistory;
+import com.baidu.tv.player.model.Playlist;
+import com.baidu.tv.player.model.PlaylistItem;
 import com.baidu.tv.player.repository.PlaybackHistoryRepository;
+import com.baidu.tv.player.repository.PlaylistRepository;
 import com.baidu.tv.player.utils.LocationUtils;
 import com.baidu.tv.player.utils.PlaylistCache;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions;
+import com.bumptech.glide.request.RequestListener;
+import com.bumptech.glide.request.target.Target;
 import com.google.android.exoplayer2.ExoPlayer;
 import com.google.android.exoplayer2.MediaItem;
 import com.google.android.exoplayer2.Player;
@@ -507,27 +513,101 @@ public class PlaybackActivity extends FragmentActivity {
                 }
             });
         } else {
-            // 优先从缓存加载播放列表
-            String playlistId = getIntent().getStringExtra("playlistId");
-            List<FileInfo> files = null;
-            
-            if (playlistId != null) {
-                // 从缓存中获取并移除播放列表（一次性使用）
-                files = PlaylistCache.getInstance().getAndRemove(playlistId);
-            }
-            
-            // 如果缓存中没有，则尝试从Intent中获取（兼容旧版本）
-            if (files == null) {
-                files = getIntent().getParcelableArrayListExtra("files");
-            }
-            
-            if (files != null && !files.isEmpty()) {
-                viewModel.setPlayList(files);
+            // 检查是否有传入的播放列表ID
+            long playlistDatabaseId = getIntent().getLongExtra("playlistDatabaseId", -1);
+            if (playlistDatabaseId != -1) {
+                // 从数据库加载播放列表（异步）
+                PlaylistRepository playlistRepository = new PlaylistRepository(getApplication());
                 
-                // 设置起始播放位置
-                int startIndex = getIntent().getIntExtra("startIndex", 0);
-                if (startIndex >= 0 && startIndex < files.size()) {
-                    viewModel.setCurrentIndex(startIndex);
+                // 在后台线程中执行数据库操作
+                new Thread(() -> {
+                    try {
+                        Playlist playlist = playlistRepository.getPlaylistByIdSync(playlistDatabaseId);
+                        
+                        if (playlist != null) {
+                            // 更新最后播放时间
+                            playlist.setLastPlayedAt(System.currentTimeMillis());
+                            playlistRepository.updatePlaylist(playlist, null, null);
+                            
+                            // 从数据库获取播放列表项
+                            List<PlaylistItem> playlistItems = playlistRepository.getPlaylistItemsSync(playlistDatabaseId);
+                            
+                            // 转换为FileInfo列表（需要实时获取dlink）
+                            List<FileInfo> files = new ArrayList<>();
+                            for (PlaylistItem item : playlistItems) {
+                                FileInfo fileInfo = new FileInfo();
+                                fileInfo.setPath(item.getFilePath());
+                                fileInfo.setServerFilename(item.getFileName());
+                                fileInfo.setFsId(item.getFsId());
+                                fileInfo.setSize(item.getFileSize());
+                                fileInfo.setDlink(null); // 显式置空，强制使用prepareMediaUrl获取
+                                
+                                // 根据文件扩展名判断媒体类型
+                                String fileName = item.getFileName().toLowerCase();
+                                if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") ||
+                                    fileName.endsWith(".png") || fileName.endsWith(".gif") ||
+                                    fileName.endsWith(".bmp") || fileName.endsWith(".webp")) {
+                                    fileInfo.setCategory(3); // 图片
+                                } else if (fileName.endsWith(".mp4") || fileName.endsWith(".avi") ||
+                                           fileName.endsWith(".mkv") || fileName.endsWith(".mov") ||
+                                           fileName.endsWith(".wmv") || fileName.endsWith(".flv") ||
+                                           fileName.endsWith(".webm") || fileName.endsWith(".m4v")) {
+                                    fileInfo.setCategory(1); // 视频
+                                }
+                                
+                                files.add(fileInfo);
+                            }
+                            
+                            android.util.Log.d("PlaybackActivity", "从数据库加载播放列表: " + files.size() + " 个文件");
+                            
+                            if (!files.isEmpty()) {
+                                // 切换回主线程更新UI
+                                runOnUiThread(() -> {
+                                    viewModel.setPlayList(files);
+                                    
+                                    // 设置起始播放位置（从播放列表中获取）
+                                    int startIndex = playlist.getLastPlayedIndex();
+                                    if (startIndex >= 0 && startIndex < files.size()) {
+                                        viewModel.setCurrentIndex(startIndex);
+                                    }
+                                    
+                                    // 保存播放列表ID到ViewModel，用于更新播放进度
+                                    viewModel.setPlaylistDatabaseId(playlistDatabaseId);
+                                });
+                            }
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        runOnUiThread(() -> {
+                            android.widget.Toast.makeText(PlaybackActivity.this,
+                                "加载播放列表失败", android.widget.Toast.LENGTH_SHORT).show();
+                            finish();
+                        });
+                    }
+                }).start();
+            } else {
+                // 优先从缓存加载播放列表
+                String playlistId = getIntent().getStringExtra("playlistId");
+                List<FileInfo> files = null;
+                
+                if (playlistId != null) {
+                    // 从缓存中获取并移除播放列表（一次性使用）
+                    files = PlaylistCache.getInstance().getAndRemove(playlistId);
+                }
+                
+                // 如果缓存中没有，则尝试从Intent中获取（兼容旧版本）
+                if (files == null) {
+                    files = getIntent().getParcelableArrayListExtra("files");
+                }
+                
+                if (files != null && !files.isEmpty()) {
+                    viewModel.setPlayList(files);
+                    
+                    // 设置起始播放位置
+                    int startIndex = getIntent().getIntExtra("startIndex", 0);
+                    if (startIndex >= 0 && startIndex < files.size()) {
+                        viewModel.setCurrentIndex(startIndex);
+                    }
                 }
             }
         }
@@ -587,8 +667,15 @@ public class PlaybackActivity extends FragmentActivity {
     private void playCurrentFile() {
         FileInfo currentFile = viewModel.getCurrentFile();
         if (currentFile == null) {
+            android.util.Log.e("PlaybackActivity", "playCurrentFile: currentFile is null");
             return;
         }
+
+        android.util.Log.d("PlaybackActivity", "playCurrentFile: " + currentFile.getServerFilename() +
+            ", path=" + currentFile.getPath() +
+            ", fsId=" + currentFile.getFsId() +
+            ", category=" + currentFile.getCategory() +
+            ", hasDlink=" + (currentFile.getDlink() != null));
 
         // 更新文件名
         tvFileName.setText(currentFile.getServerFilename());
@@ -601,6 +688,8 @@ public class PlaybackActivity extends FragmentActivity {
         
         // 准备媒体URL
         String accessToken = authRepository.getAccessToken();
+        android.util.Log.d("PlaybackActivity", "准备获取媒体URL, accessToken=" +
+            (accessToken != null ? accessToken.substring(0, 10) + "..." : "null"));
         viewModel.prepareMediaUrl(accessToken, currentFile);
     }
 
@@ -608,6 +697,8 @@ public class PlaybackActivity extends FragmentActivity {
      * 使用URL播放视频
      */
     private void playVideoWithUrl(String videoUrl) {
+        android.util.Log.d("PlaybackActivity", "playVideoWithUrl: " + videoUrl);
+        
         // 隐藏图片显示
         ivImageDisplay.setVisibility(View.GONE);
         
@@ -675,6 +766,8 @@ public class PlaybackActivity extends FragmentActivity {
      * 使用URL播放图片
      */
     private void playImageWithUrl(String imageUrl) {
+        android.util.Log.d("PlaybackActivity", "playImageWithUrl: " + imageUrl);
+        
         // 显示图片显示，隐藏视频播放器
         surfaceView.setVisibility(View.GONE);
         playerView.setVisibility(View.GONE);
@@ -682,11 +775,17 @@ public class PlaybackActivity extends FragmentActivity {
         
         // 加载图片
         if (imageUrl != null && !imageUrl.isEmpty()) {
+            android.util.Log.d("PlaybackActivity", "开始加载图片: " + imageUrl);
             // 根据设置的特效加载图片
             ImageEffect effect = viewModel.getImageEffect().getValue();
             if (effect == null) {
                 effect = ImageEffect.FADE;
             }
+            
+            // 如果是随机特效，每次显示图片时随机选择一种特效
+            ImageEffect actualEffect = effect.getActualEffect();
+            android.util.Log.d("PlaybackActivity", "图片特效: " + effect.getName() +
+                (effect == ImageEffect.RANDOM ? " -> 实际特效: " + actualEffect.getName() : ""));
 
             // 重置ImageView的变换状态
             ivImageDisplay.setScaleX(1.0f);
@@ -700,10 +799,23 @@ public class PlaybackActivity extends FragmentActivity {
             Glide.with(this)
                     .load(imageUrl)
                     .transition(transitionOptions)
+                    .listener(new RequestListener<android.graphics.drawable.Drawable>() {
+                        @Override
+                        public boolean onLoadFailed(@androidx.annotation.Nullable com.bumptech.glide.load.engine.GlideException e, Object model, Target<android.graphics.drawable.Drawable> target, boolean isFirstResource) {
+                            return false;
+                        }
+
+                        @Override
+                        public boolean onResourceReady(android.graphics.drawable.Drawable resource, Object model, Target<android.graphics.drawable.Drawable> target, com.bumptech.glide.load.DataSource dataSource, boolean isFirstResource) {
+                            // 图片加载完成后应用动画
+                            // 使用Handler延迟一小段时间，确保图片已经完全显示
+                            new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                                applyImageEffect(actualEffect);
+                            }, 100);
+                            return false;
+                        }
+                    })
                     .into(ivImageDisplay);
-            
-            // 应用额外的视图动画
-            applyImageEffect(effect);
         }
         
         // 启动图片定时播放
@@ -1022,12 +1134,24 @@ public class PlaybackActivity extends FragmentActivity {
                 break;
         }
         
+        if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_M) {
+            Intent intent = new Intent(this, com.baidu.tv.player.ui.settings.SettingsActivity.class);
+            startActivity(intent);
+            return true;
+        }
+
         return super.onKeyDown(keyCode, event);
     }
     
     @Override
     protected void onResume() {
         super.onResume();
+        
+        // 从SharedPreferences中读取播放模式并更新ViewModel
+        int savedPlayMode = com.baidu.tv.player.utils.PreferenceUtils.getPlayMode(this);
+        PlayMode newPlayMode = PlayMode.fromValue(savedPlayMode);
+        viewModel.setPlayMode(newPlayMode);
+        
         Boolean isPlaying = viewModel.getIsPlaying().getValue();
         if (isPlaying != null && isPlaying) {
             if (useVlc && vlcMediaPlayer != null && !vlcMediaPlayer.isPlaying()) {

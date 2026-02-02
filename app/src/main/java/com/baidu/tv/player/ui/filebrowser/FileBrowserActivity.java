@@ -28,8 +28,11 @@ public class FileBrowserActivity extends FragmentActivity {
             initialPath = "/";
         }
         
+        // 获取多选模式参数
+        boolean multiSelectMode = getIntent().getBooleanExtra("multiSelectMode", false);
+        
         // 创建并添加Fragment
-        fragment = FileBrowserFragment.newInstance(mediaType, initialPath);
+        fragment = FileBrowserFragment.newInstance(mediaType, initialPath, multiSelectMode);
         
         FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
         transaction.replace(R.id.fragment_container, fragment);

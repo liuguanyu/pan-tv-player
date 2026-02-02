@@ -58,7 +58,7 @@
                         android:id="@+id/rb_effect_fade"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginEnd="24dp"
+                        android:layout_marginEnd="16dp"
                         android:text="淡入淡出"
                         android:textColor="@color/text_secondary" />
 
@@ -66,7 +66,7 @@
                         android:id="@+id/rb_effect_ease"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginEnd="24dp"
+                        android:layout_marginEnd="16dp"
                         android:text="缓动"
                         android:textColor="@color/text_secondary" />
 
@@ -74,7 +74,7 @@
                         android:id="@+id/rb_effect_float"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginEnd="24dp"
+                        android:layout_marginEnd="16dp"
                         android:text="浮现"
                         android:textColor="@color/text_secondary" />
 
@@ -82,7 +82,15 @@
                         android:id="@+id/rb_effect_bounce"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:layout_marginEnd="16dp"
                         android:text="跳动"
+                        android:textColor="@color/text_secondary" />
+
+                    <RadioButton
+                        android:id="@+id/rb_effect_random"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="随机"
                         android:textColor="@color/text_secondary" />
                 </RadioGroup>
             </LinearLayout>
@@ -120,6 +128,64 @@
                     android:layout_marginTop="8dp"
                     android:text="5秒"
                     android:textColor="@color/text_secondary" />
+            </LinearLayout>
+
+            <!-- 播放顺序 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                android:background="@drawable/selector_item_background"
+                android:clickable="true"
+                android:focusable="true"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="播放顺序"
+                    android:textColor="@color/text_primary"
+                    android:textSize="20sp" />
+
+                <RadioGroup
+                    android:id="@+id/rg_play_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_mode_sequential"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="16dp"
+                        android:text="顺序播放"
+                        android:textColor="@color/text_secondary" />
+
+                    <RadioButton
+                        android:id="@+id/rb_mode_reverse"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="16dp"
+                        android:text="倒序播放"
+                        android:textColor="@color/text_secondary" />
+
+                    <RadioButton
+                        android:id="@+id/rb_mode_random"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="16dp"
+                        android:text="随机播放"
+                        android:textColor="@color/text_secondary" />
+
+                    <RadioButton
+                        android:id="@+id/rb_mode_single"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="单曲循环"
+                        android:textColor="@color/text_secondary" />
+                </RadioGroup>
             </LinearLayout>
 
             <!-- 地点显示开关 -->

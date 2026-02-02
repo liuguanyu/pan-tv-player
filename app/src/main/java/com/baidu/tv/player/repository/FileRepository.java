@@ -78,6 +78,158 @@ public class FileRepository {
     }
 
     /**
+     * 文件列表回调接口
+     */
+    public interface FileListCallback {
+        void onSuccess(List<FileInfo> files);
+        void onFailure(String error);
+    }
+
+    /**
+     * 非递归获取单个目录的文件列表（回调方式）
+     * 只获取当前目录的文件，不递归子目录
+     */
+    public void fetchFilesNonRecursive(String accessToken, String dirPath, final FileListCallback callback) {
+        Log.d(TAG, "fetchFilesNonRecursive开始: dirPath=" + dirPath);
+        
+        // 只获取第一页（最多1000个文件）
+        fetchPagesWithLimit(accessToken, dirPath, 0, new ArrayList<>(), 1, new FetchPagesCallback() {
+            @Override
+            public void onSuccess(List<FileInfo> allFiles, boolean hasMore) {
+                Log.d(TAG, "fetchFilesNonRecursive完成: 文件数=" + allFiles.size());
+                
+                // 打印前5个文件的详细信息
+                for (int i = 0; i < Math.min(5, allFiles.size()); i++) {
+                    FileInfo f = allFiles.get(i);
+                    Log.d(TAG, "  文件" + i + ": name=" + f.getServerFilename() +
+                        ", isDir=" + f.isDirectory() +
+                        ", category=" + f.getCategory() +
+                        ", isImage=" + f.isImage() +
+                        ", isVideo=" + f.isVideo());
+                }
+                
+                callback.onSuccess(allFiles);
+            }
+
+            @Override
+            public void onFailure(String error) {
+                Log.e(TAG, "fetchFilesNonRecursive失败: " + error);
+                callback.onFailure(error);
+            }
+        });
+    }
+    
+    /**
+     * 递归获取文件列表（回调方式，用于后台任务组合）
+     * 使用手动递归实现，避免使用不稳定的xpan/multimedia?method=listall接口
+     */
+    public void fetchFilesRecursive(String accessToken, String dirPath, final FileListCallback callback) {
+        Log.d(TAG, "fetchFilesRecursive开始: dirPath=" + dirPath);
+        
+        // 使用手动递归，最多处理100个目录，避免无限递归
+        manualRecursiveFetch(accessToken, dirPath, new ArrayList<>(), new ArrayList<>(), 0, 100, new FetchPagesCallback() {
+            @Override
+            public void onSuccess(List<FileInfo> allFiles, boolean hasMore) {
+                // 添加调试日志
+                Log.d(TAG, "fetchFilesRecursive完成: 总文件数=" + allFiles.size());
+                
+                // 打印前5个文件的详细信息
+                for (int i = 0; i < Math.min(5, allFiles.size()); i++) {
+                    FileInfo f = allFiles.get(i);
+                    Log.d(TAG, "  文件" + i + ": name=" + f.getServerFilename() +
+                        ", isDir=" + f.isDirectory() +
+                        ", category=" + f.getCategory() +
+                        ", isImage=" + f.isImage() +
+                        ", isVideo=" + f.isVideo());
+                }
+                
+                callback.onSuccess(allFiles);
+            }
+
+            @Override
+            public void onFailure(String error) {
+                Log.e(TAG, "fetchFilesRecursive失败: " + error);
+                callback.onFailure(error);
+            }
+        });
+    }
+    
+    /**
+     * 手动递归获取文件列表（深度优先遍历）
+     * @param accessToken 访问令牌
+     * @param currentPath 当前路径
+     * @param allFiles 累积的所有文件
+     * @param pendingDirs 待处理的目录队列
+     * @param processedDirCount 已处理目录数
+     * @param maxDirs 最大处理目录数（防止无限递归）
+     * @param callback 回调
+     */
+    private void manualRecursiveFetch(String accessToken, String currentPath,
+                                     List<FileInfo> allFiles, List<String> pendingDirs,
+                                     int processedDirCount, int maxDirs,
+                                     FetchPagesCallback callback) {
+        // 防止无限递归
+        if (processedDirCount >= maxDirs) {
+            Log.w(TAG, "已达到最大目录处理数限制: " + maxDirs);
+            callback.onSuccess(allFiles, true);
+            return;
+        }
+        
+        Log.d(TAG, "手动递归处理目录: " + currentPath + " (已处理: " + processedDirCount + "/" + maxDirs + ")");
+        
+        // 获取当前目录的文件列表（最多5页，5000个文件）
+        fetchPagesWithLimit(accessToken, currentPath, 0, new ArrayList<>(), 5, new FetchPagesCallback() {
+            @Override
+            public void onSuccess(List<FileInfo> files, boolean hasMore) {
+                Log.d(TAG, "目录 " + currentPath + " 包含 " + files.size() + " 个项目");
+                
+                // 分离文件和目录
+                List<String> subDirs = new ArrayList<>();
+                for (FileInfo file : files) {
+                    if (file.isDirectory()) {
+                        subDirs.add(file.getPath());
+                    } else {
+                        allFiles.add(file);
+                    }
+                }
+                
+                Log.d(TAG, "目录 " + currentPath + ": 文件数=" + (files.size() - subDirs.size()) + ", 子目录数=" + subDirs.size());
+                
+                // 将子目录添加到待处理队列
+                pendingDirs.addAll(subDirs);
+                
+                // 处理下一个目录
+                processNextDirectory(accessToken, allFiles, pendingDirs, processedDirCount + 1, maxDirs, callback);
+            }
+
+            @Override
+            public void onFailure(String error) {
+                String errorMsg = error != null ? error : "未知错误";
+                Log.e(TAG, "获取目录 " + currentPath + " 失败: " + errorMsg);
+                // 即使当前目录失败，继续处理其他目录
+                processNextDirectory(accessToken, allFiles, pendingDirs, processedDirCount + 1, maxDirs, callback);
+            }
+        });
+    }
+    
+    /**
+     * 处理下一个待处理的目录
+     */
+    private void processNextDirectory(String accessToken, List<FileInfo> allFiles,
+                                     List<String> pendingDirs, int processedDirCount,
+                                     int maxDirs, FetchPagesCallback callback) {
+        if (pendingDirs.isEmpty()) {
+            // 所有目录已处理完成
+            Log.d(TAG, "手动递归完成: 总文件数=" + allFiles.size() + ", 已处理目录数=" + processedDirCount);
+            callback.onSuccess(allFiles, false);
+        } else {
+            // 处理下一个目录
+            String nextDir = pendingDirs.remove(0);
+            manualRecursiveFetch(accessToken, nextDir, allFiles, pendingDirs, processedDirCount, maxDirs, callback);
+        }
+    }
+
+    /**
      * 智能分页加载（限制最大页数避免内存溢出）
      */
     private void fetchPagesWithLimit(String accessToken, String dirPath, int start,
@@ -135,7 +287,12 @@ public class FileRepository {
                             callback.onSuccess(accumulatedFiles, false);
                         }
                     } else {
-                        callback.onFailure(fileListResponse.getErrmsg());
+                        String errMsg = fileListResponse.getErrmsg();
+                        if (errMsg == null || errMsg.isEmpty()) {
+                            errMsg = "API返回错误，errno=" + fileListResponse.getErrno();
+                        }
+                        Log.e(TAG, "API返回失败: " + errMsg + ", errno=" + fileListResponse.getErrno());
+                        callback.onFailure(errMsg);
                     }
                 } else {
                     String errorMsg = response.code() + " - " + response.message();
@@ -152,7 +309,12 @@ public class FileRepository {
 
             @Override
             public void onFailure(Call<FileListResponse> call, Throwable t) {
-                callback.onFailure(t.getMessage());
+                String errorMsg = t.getMessage();
+                if (errorMsg == null) {
+                    errorMsg = "网络请求失败: " + t.getClass().getSimpleName();
+                }
+                Log.e(TAG, "获取文件详情失败: " + errorMsg, t);
+                callback.onFailure(errorMsg);
             }
         });
     }
@@ -327,19 +489,24 @@ public class FileRepository {
                 continue;
             }
 
-            // 根据媒体类型过滤
+            // 根据媒体类型过滤（使用MediaType枚举的值）
             switch (mediaType) {
-                case 0: // 图片
+                case 1: // 图片
                     if (file.isImage()) {
                         filteredList.add(file);
                     }
                     break;
-                case 1: // 视频
+                case 2: // 视频
                     if (file.isVideo()) {
                         filteredList.add(file);
                     }
                     break;
-                case 2: // 全部
+                case 3: // 全部（图片+视频）
+                    if (file.isImage() || file.isVideo()) {
+                        filteredList.add(file);
+                    }
+                    break;
+                default: // 默认全部
                     if (file.isImage() || file.isVideo()) {
                         filteredList.add(file);
                     }

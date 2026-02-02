@@ -23,6 +23,12 @@ public class PreferenceUtils {
     // 地点显示
     private static final String KEY_SHOW_LOCATION = "show_location";
     
+    // 文件排序相关
+    private static final String KEY_FILE_SORT_MODE = "file_sort_mode";
+    
+    // 播放模式相关
+    private static final String KEY_PLAY_MODE = "play_mode";
+
     // 默认值
     private static final int DEFAULT_IMAGE_EFFECT = 0; // 淡入淡出
     private static final int DEFAULT_IMAGE_DISPLAY_DURATION = 5000; // 5秒
@@ -198,5 +204,51 @@ public class PreferenceUtils {
      */
     public static boolean getShowLocation(Context context) {
         return getPreferences(context).getBoolean(KEY_SHOW_LOCATION, DEFAULT_SHOW_LOCATION);
+    }
+    
+    // ========== 文件排序相关 ==========
+    
+    /**
+     * 保存文件排序模式
+     * 0: NAME_ASC
+     * 1: NAME_DESC
+     * 2: DATE_ASC
+     * 3: DATE_DESC
+     */
+    public static void saveFileSortMode(Context context, int mode) {
+        getPreferences(context).edit()
+                .putInt(KEY_FILE_SORT_MODE, mode)
+                .apply();
+    }
+    
+    /**
+     * 获取文件排序模式
+     */
+    public static int getFileSortMode(Context context) {
+        // 默认为0 (NAME_ASC)
+        return getPreferences(context).getInt(KEY_FILE_SORT_MODE, 0);
+    }
+    
+    // ========== 播放模式相关 ==========
+    
+    /**
+     * 保存播放模式
+     * 0: 顺序播放
+     * 1: 随机播放
+     * 2: 单曲循环
+     * 3: 倒序播放
+     */
+    public static void savePlayMode(Context context, int mode) {
+        getPreferences(context).edit()
+                .putInt(KEY_PLAY_MODE, mode)
+                .apply();
+    }
+    
+    /**
+     * 获取播放模式
+     */
+    public static int getPlayMode(Context context) {
+        // 默认为0 (SEQUENTIAL)
+        return getPreferences(context).getInt(KEY_PLAY_MODE, 0);
     }
 }

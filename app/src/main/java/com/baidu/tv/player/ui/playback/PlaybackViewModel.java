@@ -12,7 +12,9 @@ import android.util.Log;
 import com.baidu.tv.player.model.FileInfo;
 import com.baidu.tv.player.model.ImageEffect;
 import com.baidu.tv.player.model.PlayMode;
+import com.baidu.tv.player.model.Playlist;
 import com.baidu.tv.player.repository.FileRepository;
+import com.baidu.tv.player.repository.PlaylistRepository;
 import com.baidu.tv.player.utils.PreferenceUtils;
 
 import java.util.ArrayList;
@@ -34,6 +36,10 @@ public class PlaybackViewModel extends AndroidViewModel {
     private List<Integer> randomIndices;
     private Random random;
     
+    // 播放列表数据库ID（用于更新播放进度）
+    private long playlistDatabaseId = -1;
+    private PlaylistRepository playlistRepository;
+    
     // 图片特效
     private MutableLiveData<ImageEffect> imageEffect;
     private MutableLiveData<Integer> imageDisplayDuration; // 图片展示时长（毫秒）
@@ -50,7 +56,8 @@ public class PlaybackViewModel extends AndroidViewModel {
         super(application);
         playList = new MutableLiveData<>();
         currentIndex = new MutableLiveData<>(0);
-        playMode = new MutableLiveData<>(PlayMode.SEQUENTIAL);
+        playMode = new MutableLiveData<>(PlayMode.fromValue(
+                PreferenceUtils.getPlayMode(application)));
         isPlaying = new MutableLiveData<>(false);
         currentLocation = new MutableLiveData<>();
         randomIndices = new ArrayList<>();
@@ -70,6 +77,7 @@ public class PlaybackViewModel extends AndroidViewModel {
                 
         preparedMediaUrl = new MutableLiveData<>();
         fileRepository = FileRepository.getInstance();
+        playlistRepository = new PlaylistRepository(application);
     }
 
     public LiveData<List<FileInfo>> getPlayList() {
@@ -124,27 +132,45 @@ public class PlaybackViewModel extends AndroidViewModel {
             return;
         }
 
-        // 如果dlink已经存在，直接使用
-        if (file.getDlink() != null && !file.getDlink().isEmpty()) {
-            String finalUrl = file.getDlink();
+        // 如果dlink已经存在且有效（以http开头），直接使用
+        String currentDlink = file.getDlink();
+        if (currentDlink != null && !currentDlink.isEmpty() && currentDlink.startsWith("http")) {
+            Log.d("PlaybackViewModel", "使用现有的dlink: " + currentDlink);
+            String finalUrl = currentDlink;
             if (!finalUrl.contains("access_token=")) {
                 finalUrl += (finalUrl.contains("?") ? "&" : "?") + "access_token=" + accessToken;
             }
             preparedMediaUrl.setValue(finalUrl);
             return;
+        } else {
+            if (currentDlink != null) {
+                Log.w("PlaybackViewModel", "现有的dlink无效(不是http开头): " + currentDlink);
+            }
         }
 
         // 否则，通过API获取文件详情
+        Log.d("PlaybackViewModel", "正在获取文件详情以获取dlink, fsId=" + file.getFsId());
         fileRepository.fetchFileDetail(accessToken, file.getFsId(), new FileRepository.FileDetailCallback() {
             @Override
             public void onSuccess(FileInfo fileInfo) {
                 String dlink = fileInfo.getDlink();
+                Log.d("PlaybackViewModel", "获取文件详情成功, dlink=" + dlink);
+                
                 if (dlink != null && !dlink.isEmpty()) {
+                    if (!dlink.startsWith("http")) {
+                        Log.e("PlaybackViewModel", "API返回的dlink无效(不是http开头): " + dlink);
+                        // 尝试构建一个临时的dlink（虽然可能无法工作，但比路径好）
+                        // 或者直接报错
+                        preparedMediaUrl.setValue(null);
+                        return;
+                    }
+                    
                     // 附加access_token到dlink
                     String finalUrl = dlink;
                     if (!finalUrl.contains("access_token=")) {
                         finalUrl += (finalUrl.contains("?") ? "&" : "?") + "access_token=" + accessToken;
                     }
+                    Log.d("PlaybackViewModel", "准备播放URL: " + finalUrl);
                     preparedMediaUrl.setValue(finalUrl);
                 } else {
                     Log.e("PlaybackViewModel", "获取到的dlink为空: " + fileInfo.getPath());
@@ -231,6 +257,9 @@ public class PlaybackViewModel extends AndroidViewModel {
             case SEQUENTIAL:
                 nextIndex = (current + 1) % files.size();
                 break;
+            case REVERSE:
+                nextIndex = (current - 1 + files.size()) % files.size();
+                break;
             case RANDOM:
                 nextIndex = getNextRandomIndex(current);
                 break;
@@ -264,6 +293,9 @@ public class PlaybackViewModel extends AndroidViewModel {
             case SEQUENTIAL:
                 prevIndex = (current - 1 + files.size()) % files.size();
                 break;
+            case REVERSE:
+                prevIndex = (current + 1) % files.size();
+                break;
             case RANDOM:
                 prevIndex = getPreviousRandomIndex(current);
                 break;
@@ -284,6 +316,7 @@ public class PlaybackViewModel extends AndroidViewModel {
         List<FileInfo> files = playList.getValue();
         if (files != null && index >= 0 && index < files.size()) {
             currentIndex.setValue(index);
+            updatePlaylistProgress(index);
         }
     }
     
@@ -294,6 +327,7 @@ public class PlaybackViewModel extends AndroidViewModel {
         List<FileInfo> files = playList.getValue();
         if (files != null && index >= 0 && index < files.size()) {
             currentIndex.setValue(index);
+            updatePlaylistProgress(index);
         }
     }
 
@@ -334,6 +368,18 @@ public class PlaybackViewModel extends AndroidViewModel {
     public void setShowLocation(boolean show) {
         showLocation.setValue(show);
         PreferenceUtils.saveShowLocation(getApplication(), show);
+    }
+
+    /**
+     * 设置播放模式
+     */
+    public void setPlayMode(PlayMode mode) {
+        playMode.setValue(mode);
+        
+        // 如果切换到随机模式，重新生成随机索引
+        if (mode == PlayMode.RANDOM) {
+            generateRandomIndices();
+        }
     }
 
     /**
@@ -402,5 +448,35 @@ public class PlaybackViewModel extends AndroidViewModel {
             return files.get(index);
         }
         return null;
+    }
+    
+    /**
+     * 设置播放列表数据库ID
+     */
+    public void setPlaylistDatabaseId(long id) {
+        this.playlistDatabaseId = id;
+    }
+    
+    /**
+     * 更新播放列表的播放进度
+     */
+    private void updatePlaylistProgress(int index) {
+        if (playlistDatabaseId == -1) {
+            return;
+        }
+        
+        new Thread(() -> {
+            try {
+                Playlist playlist = playlistRepository.getPlaylistByIdSync(playlistDatabaseId);
+                if (playlist != null) {
+                    playlist.setLastPlayedIndex(index);
+                    playlist.setLastPlayedAt(System.currentTimeMillis());
+                    playlistRepository.updatePlaylist(playlist, null, null);
+                    Log.d("PlaybackViewModel", "更新播放列表进度: playlistId=" + playlistDatabaseId + ", index=" + index);
+                }
+            } catch (Exception e) {
+                Log.e("PlaybackViewModel", "更新播放列表进度失败", e);
+            }
+        }).start();
     }
 }

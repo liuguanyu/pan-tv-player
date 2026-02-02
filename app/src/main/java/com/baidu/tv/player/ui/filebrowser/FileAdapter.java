@@ -17,8 +17,10 @@ import com.bumptech.glide.Glide;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * 文件列表适配器
@@ -26,7 +28,10 @@ import java.util.Locale;
 public class FileAdapter extends RecyclerView.Adapter<FileAdapter.FileViewHolder> {
     private List<FileInfo> fileList;
     private OnItemClickListener onItemClickListener;
+    private OnItemLongClickListener onItemLongClickListener;
     private SimpleDateFormat dateFormat;
+    private boolean multiSelectMode = false;
+    private Set<String> selectedPaths = new HashSet<>();
 
     public FileAdapter() {
         this.fileList = new ArrayList<>();
@@ -40,6 +45,53 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.FileViewHolder
 
     public void setOnItemClickListener(OnItemClickListener listener) {
         this.onItemClickListener = listener;
+    }
+
+    public void setOnItemLongClickListener(OnItemLongClickListener listener) {
+        this.onItemLongClickListener = listener;
+    }
+    
+    /**
+     * 设置多选模式
+     */
+    public void setMultiSelectMode(boolean multiSelectMode) {
+        this.multiSelectMode = multiSelectMode;
+        notifyDataSetChanged();
+    }
+    
+    /**
+     * 设置选中的文件路径
+     */
+    public void setSelectedPaths(Set<String> selectedPaths) {
+        this.selectedPaths = selectedPaths != null ? selectedPaths : new HashSet<>();
+        notifyDataSetChanged();
+    }
+    
+    /**
+     * 获取选中的文件路径
+     */
+    public Set<String> getSelectedPaths() {
+        return selectedPaths;
+    }
+    
+    /**
+     * 切换选中状态
+     */
+    public void toggleSelection(String path) {
+        if (selectedPaths.contains(path)) {
+            selectedPaths.remove(path);
+        } else {
+            selectedPaths.add(path);
+        }
+        notifyDataSetChanged();
+    }
+    
+    /**
+     * 清空选中
+     */
+    public void clearSelection() {
+        selectedPaths.clear();
+        notifyDataSetChanged();
     }
 
     @NonNull
@@ -79,6 +131,14 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.FileViewHolder
                 if (position != RecyclerView.NO_POSITION && onItemClickListener != null) {
                     onItemClickListener.onItemClick(fileList.get(position), position);
                 }
+            });
+
+            itemView.setOnLongClickListener(v -> {
+                int position = getAdapterPosition();
+                if (position != RecyclerView.NO_POSITION && onItemLongClickListener != null) {
+                    return onItemLongClickListener.onItemLongClick(fileList.get(position), position);
+                }
+                return false;
             });
         }
 
@@ -135,12 +195,25 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.FileViewHolder
             
             tvFileInfo.setText(infoBuilder.toString());
 
-            // 选中状态（暂时隐藏，后续可以添加多选功能）
-            ivSelected.setVisibility(View.GONE);
+            // 选中状态
+            if (multiSelectMode) {
+                ivSelected.setVisibility(View.VISIBLE);
+                if (selectedPaths.contains(file.getPath())) {
+                    ivSelected.setImageResource(android.R.drawable.checkbox_on_background);
+                } else {
+                    ivSelected.setImageResource(android.R.drawable.checkbox_off_background);
+                }
+            } else {
+                ivSelected.setVisibility(View.GONE);
+            }
         }
     }
 
     public interface OnItemClickListener {
         void onItemClick(FileInfo file, int position);
+    }
+
+    public interface OnItemLongClickListener {
+        boolean onItemLongClick(FileInfo file, int position);
     }
 }

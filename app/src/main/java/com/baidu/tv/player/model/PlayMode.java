@@ -6,7 +6,8 @@ package com.baidu.tv.player.model;
 public enum PlayMode {
     SEQUENTIAL(0, "顺序播放"),
     RANDOM(1, "随机播放"),
-    SINGLE(2, "单曲循环");
+    SINGLE(2, "单曲循环"),
+    REVERSE(3, "倒序播放");
 
     private final int value;
     private final String name;

@@ -2,6 +2,7 @@ package com.baidu.tv.player.ui.main;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -18,6 +19,8 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.baidu.tv.player.R;
 import com.baidu.tv.player.model.MediaType;
 import com.baidu.tv.player.model.PlaybackHistory;
+import com.baidu.tv.player.model.Playlist;
+import com.baidu.tv.player.repository.PlaylistRepository;
 
 import java.util.List;
 
@@ -27,12 +30,16 @@ import java.util.List;
 public class MainFragment extends Fragment {
     
     private MainViewModel viewModel;
-    private RecentTaskAdapter adapter;
-    private LinearLayout btnImages;
-    private LinearLayout btnVideos;
-    private LinearLayout btnAll;
+    private RecentTaskAdapter recentTaskAdapter;
+    private PlaylistAdapter playlistAdapter;
+    private PlaylistRepository playlistRepository;
+    
+    private RecyclerView rvPlaylists;
     private RecyclerView rvRecentTasks;
     private TextView tvRecentTitle;
+    private TextView tvNoPlaylist;
+    private LinearLayout btnBrowseFiles;
+    private LinearLayout btnCreatePlaylist;
     
     @Nullable
     @Override
@@ -41,31 +48,40 @@ public class MainFragment extends Fragment {
         
         initViews(view);
         initViewModel();
+        loadPlaylists();
         
         return view;
     }
     
     private void initViews(View view) {
-        btnImages = view.findViewById(R.id.btn_images);
-        btnVideos = view.findViewById(R.id.btn_videos);
-        btnAll = view.findViewById(R.id.btn_all);
-        TextView btnSettings = view.findViewById(R.id.btn_settings);
+        rvPlaylists = view.findViewById(R.id.rv_playlists);
         rvRecentTasks = view.findViewById(R.id.rv_recent_tasks);
         tvRecentTitle = view.findViewById(R.id.tv_recent_title);
+        tvNoPlaylist = view.findViewById(R.id.tv_no_playlist);
+        btnBrowseFiles = view.findViewById(R.id.btn_browse_files);
+        btnCreatePlaylist = view.findViewById(R.id.btn_create_playlist);
         
-        // 设置RecyclerView为横向
-        adapter = new RecentTaskAdapter();
+        // 设置播放列表RecyclerView为横向
+        playlistAdapter = new PlaylistAdapter(requireContext());
+        rvPlaylists.setLayoutManager(new LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false));
+        rvPlaylists.setAdapter(playlistAdapter);
+        
+        // 设置最近任务RecyclerView为横向
+        recentTaskAdapter = new RecentTaskAdapter();
         rvRecentTasks.setLayoutManager(new LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false));
-        rvRecentTasks.setAdapter(adapter);
+        rvRecentTasks.setAdapter(recentTaskAdapter);
         
         // 设置点击事件
-        btnImages.setOnClickListener(v -> openFileBrowser(MediaType.IMAGE));
-        btnVideos.setOnClickListener(v -> openFileBrowser(MediaType.VIDEO));
-        btnAll.setOnClickListener(v -> openFileBrowser(MediaType.ALL));
-        btnSettings.setOnClickListener(v -> openSettings());
+        btnBrowseFiles.setOnClickListener(v -> openFileBrowser(MediaType.ALL));
+        btnCreatePlaylist.setOnClickListener(v -> openFileBrowserForPlaylist());
+        
+        // 设置播放列表点击事件
+        playlistAdapter.setOnItemClickListener(this::onPlaylistClick);
+        playlistAdapter.setOnItemLongClickListener(this::onPlaylistLongClick);
+        playlistAdapter.setOnDeleteClickListener(this::onPlaylistDelete);
         
         // 设置最近任务点击事件
-        adapter.setOnItemClickListener(this::onRecentTaskClick);
+        recentTaskAdapter.setOnItemClickListener(this::onRecentTaskClick);
     }
     
     private void initViewModel() {
@@ -78,11 +94,31 @@ public class MainFragment extends Fragment {
             } else {
                 tvRecentTitle.setVisibility(View.VISIBLE);
                 rvRecentTasks.setVisibility(View.VISIBLE);
-                adapter.setHistoryList(historyList);
+                recentTaskAdapter.setHistoryList(historyList);
             }
         });
     }
     
+    /**
+     * 加载播放列表
+     */
+    private void loadPlaylists() {
+        playlistRepository = new PlaylistRepository(requireContext());
+        playlistRepository.getAllPlaylists().observe(getViewLifecycleOwner(), playlists -> {
+            if (playlists == null || playlists.isEmpty()) {
+                rvPlaylists.setVisibility(View.GONE);
+                tvNoPlaylist.setVisibility(View.VISIBLE);
+            } else {
+                rvPlaylists.setVisibility(View.VISIBLE);
+                tvNoPlaylist.setVisibility(View.GONE);
+                playlistAdapter.setPlaylists(playlists);
+            }
+        });
+    }
+    
+    /**
+     * 打开文件浏览器（普通模式）
+     */
     private void openFileBrowser(MediaType mediaType) {
         Intent intent = new Intent(requireContext(), com.baidu.tv.player.ui.filebrowser.FileBrowserActivity.class);
         intent.putExtra("mediaType", mediaType.getValue());
@@ -90,10 +126,142 @@ public class MainFragment extends Fragment {
         startActivity(intent);
     }
     
+    /**
+     * 打开文件浏览器（创建播放列表模式）
+     */
+    private void openFileBrowserForPlaylist() {
+        Intent intent = new Intent(requireContext(), com.baidu.tv.player.ui.filebrowser.FileBrowserActivity.class);
+        intent.putExtra("mediaType", MediaType.ALL.getValue());
+        intent.putExtra("initialPath", "/");
+        intent.putExtra("multiSelectMode", true); // 多选模式
+        startActivityForResult(intent, 1001); // 请求码用于标识创建播放列表操作
+    }
+    
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        
+        // 处理从FileBrowserActivity返回的结果
+        if (requestCode == 1001 && resultCode == android.app.Activity.RESULT_OK) {
+            // 播放列表创建成功，刷新播放列表显示
+            loadPlaylists();
+        }
+    }
+    
+    /**
+     * 播放列表点击事件
+     */
+    private void onPlaylistClick(Playlist playlist) {
+        // 如果处于编辑模式，点击无效
+        if (playlistAdapter.isEditMode()) {
+            return;
+        }
+        
+        // 启动播放器，播放该播放列表
+        Intent intent = new Intent(requireContext(), com.baidu.tv.player.ui.playback.PlaybackActivity.class);
+        intent.putExtra("playlistDatabaseId", playlist.getId());
+        startActivity(intent);
+    }
+    
+    /**
+     * 播放列表长按事件 - 切换编辑模式
+     */
+    private void onPlaylistLongClick(Playlist playlist) {
+        // 切换编辑模式
+        boolean newEditMode = !playlistAdapter.isEditMode();
+        playlistAdapter.setEditMode(newEditMode);
+        
+        if (newEditMode) {
+            android.widget.Toast.makeText(requireContext(),
+                "点击删除按钮删除播放列表，再次长按退出编辑模式",
+                android.widget.Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    /**
+     * 播放列表删除事件
+     */
+    private void onPlaylistDelete(Playlist playlist) {
+        // 显示确认对话框
+        new android.app.AlertDialog.Builder(requireContext())
+            .setTitle("删除播放列表")
+            .setMessage("确定要删除播放列表\"" + playlist.getName() + "\"吗？\n这将删除播放列表及其所有文件记录。")
+            .setPositiveButton("删除", (dialog, which) -> {
+                // 执行删除操作
+                new Thread(() -> {
+                    try {
+                        playlistRepository.deletePlaylist(playlist,
+                            () -> {
+                                // 删除成功
+                                requireActivity().runOnUiThread(() -> {
+                                    android.widget.Toast.makeText(requireContext(),
+                                        "播放列表已删除",
+                                        android.widget.Toast.LENGTH_SHORT).show();
+                                    
+                                    // 退出编辑模式
+                                    playlistAdapter.setEditMode(false);
+                                    
+                                    // 刷新播放列表
+                                    loadPlaylists();
+                                });
+                            },
+                            () -> {
+                                // 删除失败
+                                requireActivity().runOnUiThread(() -> {
+                                    android.widget.Toast.makeText(requireContext(),
+                                        "删除播放列表失败",
+                                        android.widget.Toast.LENGTH_SHORT).show();
+                                });
+                            });
+                    } catch (Exception e) {
+                        android.util.Log.e("MainFragment", "删除播放列表失败", e);
+                        requireActivity().runOnUiThread(() -> {
+                            android.widget.Toast.makeText(requireContext(),
+                                "删除播放列表失败: " + e.getMessage(),
+                                android.widget.Toast.LENGTH_SHORT).show();
+                        });
+                    }
+                }).start();
+            })
+            .setNegativeButton("取消", null)
+            .show();
+    }
+    
+    /**
+     * 最近任务点击事件
+     */
     private void onRecentTaskClick(PlaybackHistory history) {
         Intent intent = new Intent(requireContext(), com.baidu.tv.player.ui.playback.PlaybackActivity.class);
         intent.putExtra("historyId", history.getId());
         startActivity(intent);
+    }
+    
+    /**
+     * 处理遥控器按键事件
+     */
+    @Override
+    public void onResume() {
+        super.onResume();
+        // 设置按键监听
+        getView().setFocusableInTouchMode(true);
+        getView().requestFocus();
+        getView().setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                // 菜单键打开设置
+                if (keyCode == KeyEvent.KEYCODE_MENU) {
+                    openSettings();
+                    return true;
+                }
+                // 返回键：如果处于编辑模式，退出编辑模式
+                if (keyCode == KeyEvent.KEYCODE_BACK) {
+                    if (playlistAdapter.isEditMode()) {
+                        playlistAdapter.setEditMode(false);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        });
     }
     
     /**
