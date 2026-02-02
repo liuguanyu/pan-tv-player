@@ -4,16 +4,34 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group
-        android:scaleX="0.5"
-        android:scaleY="0.5"
-        android:translateX="27"
-        android:translateY="27">
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M54,54m-40,0a40,40 0,1 1,80 0a40,40 0,1 1,-80 0" />
-        <path
-            android:fillColor="@color/primary"
-            android:pathData="M44,34L64,54L44,74L44,34Z" />
-    </group>
+    
+    <!-- 云朵形状 - 主体 -->
+    <path
+        android:fillColor="#2196F3"
+        android:pathData="M30,45 Q30,35 40,35 Q40,28 48,28 Q56,28 60,35 Q70,35 75,40 Q80,45 80,52 Q80,60 72,65 L36,65 Q30,60 30,52 Z" />
+    
+    <!-- 云朵形状 - 左侧圆环 -->
+    <path
+        android:fillColor="#03A9F4"
+        android:pathData="M35,50 m-8,0 a8,8 0,1 1,16 0 a8,8 0,1 1,-16 0 Z M35,50 m-5,0 a5,5 0,1 0,10 0 a5,5 0,1 0,-10 0 Z" />
+    
+    <!-- 云朵形状 - 右侧圆环 -->
+    <path
+        android:fillColor="#03A9F4"
+        android:pathData="M65,50 m-8,0 a8,8 0,1 1,16 0 a8,8 0,1 1,-16 0 Z M65,50 m-5,0 a5,5 0,1 0,10 0 a5,5 0,1 0,-10 0 Z" />
+    
+    <!-- 云朵形状 - 顶部圆环 -->
+    <path
+        android:fillColor="#FF4081"
+        android:pathData="M50,38 m-8,0 a8,8 0,1 1,16 0 a8,8 0,1 1,-16 0 Z M50,38 m-5,0 a5,5 0,1 0,10 0 a5,5 0,1 0,-10 0 Z" />
+    
+    <!-- 播放按钮 - 底部 -->
+    <path
+        android:fillColor="#FF4081"
+        android:pathData="M44,70 L44,80 L56,75 Z" />
+    
+    <!-- 播放按钮 - 装饰 -->
+    <path
+        android:fillColor="#2196F3"
+        android:pathData="M58,70 L58,80 L64,75 Z" />
 </vector>
