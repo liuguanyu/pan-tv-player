@@ -66,4 +66,18 @@
         android:focusable="true"
         android:contentDescription="删除播放列表" />
 
+    <!-- 刷新按钮（覆盖在卡片中央） -->
+    <ImageView
+        android:id="@+id/iv_refresh"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="center"
+        android:src="@android:drawable/ic_popup_sync"
+        android:background="@drawable/circle_background"
+        android:padding="10dp"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="刷新播放列表" />
+
 </FrameLayout>

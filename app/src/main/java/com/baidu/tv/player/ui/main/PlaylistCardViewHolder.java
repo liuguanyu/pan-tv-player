@@ -18,6 +18,7 @@ public class PlaylistCardViewHolder extends RecyclerView.ViewHolder {
     public TextView tvPlaylistName;
     public TextView tvStats;
     public ImageView ivDelete;
+    public ImageView ivRefresh;
 
     public PlaylistCardViewHolder(View itemView) {
         super(itemView);
@@ -25,6 +26,7 @@ public class PlaylistCardViewHolder extends RecyclerView.ViewHolder {
         tvPlaylistName = itemView.findViewById(R.id.tv_playlist_name);
         tvStats = itemView.findViewById(R.id.tv_stats);
         ivDelete = itemView.findViewById(R.id.iv_delete);
+        ivRefresh = itemView.findViewById(R.id.iv_refresh);
     }
 
     /**

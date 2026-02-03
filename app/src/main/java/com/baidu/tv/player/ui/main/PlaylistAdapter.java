@@ -23,6 +23,7 @@ public class PlaylistAdapter extends RecyclerView.Adapter<PlaylistCardViewHolder
     private OnItemClickListener onItemClickListener;
     private OnItemLongClickListener onItemLongClickListener;
     private OnDeleteClickListener onDeleteClickListener;
+    private OnRefreshClickListener onRefreshClickListener;
     private final Context context;
     private boolean isEditMode = false;
 
@@ -45,6 +46,10 @@ public class PlaylistAdapter extends RecyclerView.Adapter<PlaylistCardViewHolder
     
     public void setOnDeleteClickListener(OnDeleteClickListener listener) {
         this.onDeleteClickListener = listener;
+    }
+    
+    public void setOnRefreshClickListener(OnRefreshClickListener listener) {
+        this.onRefreshClickListener = listener;
     }
     
     /**
@@ -85,11 +90,13 @@ public class PlaylistAdapter extends RecyclerView.Adapter<PlaylistCardViewHolder
         
         holder.bind(playlist.getCoverImagePath(), playlist.getName(), stats);
         
-        // 设置删除按钮的可见性
+        // 设置删除按钮和刷新按钮的可见性
         if (isEditMode) {
             holder.ivDelete.setVisibility(View.VISIBLE);
+            holder.ivRefresh.setVisibility(View.VISIBLE);
         } else {
             holder.ivDelete.setVisibility(View.GONE);
+            holder.ivRefresh.setVisibility(View.GONE);
         }
         
         // 点击事件
@@ -114,6 +121,13 @@ public class PlaylistAdapter extends RecyclerView.Adapter<PlaylistCardViewHolder
                 onDeleteClickListener.onDeleteClick(playlist);
             }
         });
+        
+        // 刷新按钮点击事件
+        holder.ivRefresh.setOnClickListener(v -> {
+            if (onRefreshClickListener != null) {
+                onRefreshClickListener.onRefreshClick(playlist);
+            }
+        });
     }
 
     @Override
@@ -131,5 +145,9 @@ public class PlaylistAdapter extends RecyclerView.Adapter<PlaylistCardViewHolder
     
     public interface OnDeleteClickListener {
         void onDeleteClick(Playlist playlist);
+    }
+    
+    public interface OnRefreshClickListener {
+        void onRefreshClick(Playlist playlist);
     }
 }

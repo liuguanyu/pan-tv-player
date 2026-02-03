@@ -21,6 +21,7 @@ import com.baidu.tv.player.model.MediaType;
 import com.baidu.tv.player.model.PlaybackHistory;
 import com.baidu.tv.player.model.Playlist;
 import com.baidu.tv.player.repository.PlaylistRepository;
+import com.baidu.tv.player.utils.PreferenceUtils;
 
 import java.util.List;
 
@@ -79,6 +80,7 @@ public class MainFragment extends Fragment {
         playlistAdapter.setOnItemClickListener(this::onPlaylistClick);
         playlistAdapter.setOnItemLongClickListener(this::onPlaylistLongClick);
         playlistAdapter.setOnDeleteClickListener(this::onPlaylistDelete);
+        playlistAdapter.setOnRefreshClickListener(this::onPlaylistRefresh);
         
         // 设置最近任务点击事件
         recentTaskAdapter.setOnItemClickListener(this::onRecentTaskClick);
@@ -225,6 +227,38 @@ public class MainFragment extends Fragment {
             })
             .setNegativeButton("取消", null)
             .show();
+    }
+    
+    /**
+     * 播放列表刷新事件
+     */
+    private void onPlaylistRefresh(Playlist playlist) {
+        // 显示刷新提示
+        android.widget.Toast.makeText(requireContext(),
+            "正在刷新播放列表\"" + playlist.getName() + "\"...",
+            android.widget.Toast.LENGTH_SHORT).show();
+        
+        // 执行刷新操作（BaiduAuthService会在PlaylistRepository内部处理认证）
+        playlistRepository.refreshPlaylist(playlist,
+            () -> {
+                // 刷新成功
+                requireActivity().runOnUiThread(() -> {
+                    android.widget.Toast.makeText(requireContext(),
+                        "播放列表刷新成功",
+                        android.widget.Toast.LENGTH_SHORT).show();
+                    
+                    // 刷新播放列表显示
+                    loadPlaylists();
+                });
+            },
+            () -> {
+                // 刷新失败
+                requireActivity().runOnUiThread(() -> {
+                    android.widget.Toast.makeText(requireContext(),
+                        "刷新播放列表失败，请检查网络连接或重新登录",
+                        android.widget.Toast.LENGTH_SHORT).show();
+                });
+            });
     }
     
     /**
