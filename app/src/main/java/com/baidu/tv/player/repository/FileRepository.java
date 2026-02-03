@@ -92,8 +92,8 @@ public class FileRepository {
     public void fetchFilesNonRecursive(String accessToken, String dirPath, final FileListCallback callback) {
         Log.d(TAG, "fetchFilesNonRecursive开始: dirPath=" + dirPath);
         
-        // 只获取第一页（最多1000个文件）
-        fetchPagesWithLimit(accessToken, dirPath, 0, new ArrayList<>(), 1, new FetchPagesCallback() {
+        // 获取所有文件，不限制页数
+        fetchPagesWithLimit(accessToken, dirPath, 0, new ArrayList<>(), Integer.MAX_VALUE, new FetchPagesCallback() {
             @Override
             public void onSuccess(List<FileInfo> allFiles, boolean hasMore) {
                 Log.d(TAG, "fetchFilesNonRecursive完成: 文件数=" + allFiles.size());
@@ -327,18 +327,14 @@ public class FileRepository {
         
         Log.d(TAG, "开始递归获取文件列表: dirPath=" + dirPath + ", mediaType=" + mediaType);
         
-        // 智能分页：递归模式最多加载前10页（10000个文件）避免内存溢出
-        fetchPagesRecursiveWithLimit(accessToken, dirPath, 0, new ArrayList<>(), 10, new FetchPagesCallback() {
+        // 获取所有文件，不限制页数
+        fetchPagesRecursiveWithLimit(accessToken, dirPath, 0, new ArrayList<>(), Integer.MAX_VALUE, new FetchPagesCallback() {
             @Override
             public void onSuccess(List<FileInfo> allFiles, boolean hasMore) {
                 Log.d(TAG, "递归获取到文件数量: " + allFiles.size() + ", 还有更多: " + hasMore);
                 List<FileInfo> filteredList = filterFiles(allFiles, mediaType);
                 Log.d(TAG, "递归过滤后文件数量: " + filteredList.size());
                 data.setValue(filteredList);
-                
-                if (hasMore) {
-                    Log.w(TAG, "递归目录包含超过10000个文件，仅显示前10000个以避免内存溢出");
-                }
             }
 
             @Override

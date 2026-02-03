@@ -59,7 +59,7 @@ public class PlaybackViewModel extends AndroidViewModel {
     public PlaybackViewModel(@NonNull Application application) {
         super(application);
         playList = new MutableLiveData<>();
-        currentIndex = new MutableLiveData<>(0);
+        currentIndex = new MutableLiveData<>(); // 不初始化值，等待setPlayList设置
         playMode = new MutableLiveData<>(PlayMode.fromValue(
                 PreferenceUtils.getPlayMode(application)));
         isPlaying = new MutableLiveData<>(false);
@@ -293,9 +293,46 @@ public class PlaybackViewModel extends AndroidViewModel {
      * 设置播放列表
      */
     public void setPlayList(List<FileInfo> files) {
+        setPlayList(files, false);
+    }
+
+    /**
+     * 设置播放列表
+     * @param files 文件列表
+     * @param resetIndex 是否根据播放模式重置索引
+     */
+    public void setPlayList(List<FileInfo> files, boolean resetIndex) {
         playList.setValue(files);
-        currentIndex.setValue(0);
-        generateRandomIndices();
+        
+        // 如果是随机模式，需要生成随机索引列表
+        if (playMode.getValue() == PlayMode.RANDOM) {
+            generateRandomIndices();
+        }
+        
+        // 根据播放模式设置初始索引
+        // 条件：明确要求重置，或者currentIndex从未设置过
+        Integer currentIndexValue = currentIndex.getValue();
+        if ((resetIndex || currentIndexValue == null) && files != null && !files.isEmpty()) {
+            PlayMode mode = playMode.getValue();
+            int initialIndex;
+            
+            Log.d("PlaybackViewModel", "重置播放索引，模式: " + (mode != null ? mode.getName() : "null"));
+            
+            if (mode == PlayMode.REVERSE) {
+                // 倒序播放：从最后一个开始
+                initialIndex = files.size() - 1;
+            } else if (mode == PlayMode.RANDOM) {
+                // 随机播放：从随机列表的第一个索引开始（该索引对应的文件是随机的）
+                // randomIndices列表已经被打乱，取第一个元素作为初始播放索引
+                initialIndex = randomIndices.isEmpty() ? 0 : randomIndices.get(0);
+                Log.d("PlaybackViewModel", "随机模式：初始索引 = " + initialIndex);
+            } else {
+                // 其他模式：从第一个开始
+                initialIndex = 0;
+            }
+            
+            currentIndex.setValue(initialIndex);
+        }
     }
 
     /**
@@ -312,12 +349,16 @@ public class PlaybackViewModel extends AndroidViewModel {
                 newMode = PlayMode.SINGLE;
                 break;
             case SINGLE:
+                newMode = PlayMode.REVERSE;
+                break;
+            case REVERSE:
                 newMode = PlayMode.SEQUENTIAL;
                 break;
             default:
                 newMode = PlayMode.SEQUENTIAL;
         }
         playMode.setValue(newMode);
+        PreferenceUtils.savePlayMode(getApplication(), newMode.getValue());
         
         // 如果切换到随机模式，重新生成随机索引
         if (newMode == PlayMode.RANDOM) {
@@ -490,6 +531,7 @@ public class PlaybackViewModel extends AndroidViewModel {
      */
     public void setPlayMode(PlayMode mode) {
         playMode.setValue(mode);
+        PreferenceUtils.savePlayMode(getApplication(), mode.getValue());
         
         // 如果切换到随机模式，重新生成随机索引
         if (mode == PlayMode.RANDOM) {

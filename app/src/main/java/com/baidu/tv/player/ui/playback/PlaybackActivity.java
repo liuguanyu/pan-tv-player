@@ -35,6 +35,7 @@ import com.baidu.tv.player.model.PlaylistItem;
 import com.baidu.tv.player.repository.PlaybackHistoryRepository;
 import com.baidu.tv.player.repository.PlaylistRepository;
 import com.baidu.tv.player.utils.LocationUtils;
+import com.baidu.tv.player.ui.view.BlindsImageView;
 import com.baidu.tv.player.utils.PlaylistCache;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions;
@@ -69,7 +70,7 @@ public class PlaybackActivity extends FragmentActivity {
     // UI组件
     private SurfaceView surfaceView; // VLC Surface
     private PlayerView playerView;   // ExoPlayer View
-    private ImageView ivImageDisplay;
+    private BlindsImageView ivImageDisplay;
     private View layoutControls;
     private TextView tvFileName;
     private TextView tvLocation;
@@ -563,16 +564,14 @@ public class PlaybackActivity extends FragmentActivity {
                             if (!files.isEmpty()) {
                                 // 切换回主线程更新UI
                                 runOnUiThread(() -> {
-                                    viewModel.setPlayList(files);
-                                    
-                                    // 设置起始播放位置（从播放列表中获取）
-                                    int startIndex = playlist.getLastPlayedIndex();
-                                    if (startIndex >= 0 && startIndex < files.size()) {
-                                        viewModel.setCurrentIndex(startIndex);
-                                    }
-                                    
                                     // 保存播放列表ID到ViewModel，用于更新播放进度
                                     viewModel.setPlaylistDatabaseId(playlistDatabaseId);
+                                    
+                                    // 设置播放列表，并强制根据当前播放模式重置初始索引
+                                    viewModel.setPlayList(files, true);
+                                    
+                                    // 注意：不再手动设置startIndex，让setPlayList()根据播放模式自动处理
+                                    // 倒序模式会自动从最后一个开始，顺序/随机模式会从第一个开始
                                 });
                             }
                         }
@@ -869,12 +868,61 @@ public class PlaybackActivity extends FragmentActivity {
                         .start();
                 break;
                 
+            case BLINDS:
+                // 百叶窗效果：启动自定义动画
+                ivImageDisplay.resetBlinds();
+                ivImageDisplay.post(() -> ivImageDisplay.startBlindsAnimation());
+                break;
+                
+            case ZOOM:
+                // 放大效果：从中心放大
+                ivImageDisplay.setScaleX(0.5f);
+                ivImageDisplay.setScaleY(0.5f);
+                ivImageDisplay.setAlpha(0f);
+                ivImageDisplay.animate()
+                        .scaleX(1.0f)
+                        .scaleY(1.0f)
+                        .alpha(1.0f)
+                        .setDuration(1000)
+                        .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                        .start();
+                break;
+                
+            case ROTATE:
+                // 旋转效果：从旋转状态恢复
+                ivImageDisplay.setRotation(360f);
+                ivImageDisplay.setAlpha(0f);
+                ivImageDisplay.animate()
+                        .rotation(0f)
+                        .alpha(1.0f)
+                        .setDuration(1000)
+                        .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                        .start();
+                break;
+                
+            case SLIDE:
+                // 两侧划入效果：从两侧向中间
+                // 先设置透明度为0，然后淡入
+                ivImageDisplay.setAlpha(0f);
+                ivImageDisplay.setTranslationX(0f);
+                ivImageDisplay.setScaleX(0.8f);
+                ivImageDisplay.setScaleY(0.8f);
+                ivImageDisplay.animate()
+                        .alpha(1.0f)
+                        .scaleX(1.0f)
+                        .scaleY(1.0f)
+                        .setDuration(1000)
+                        .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                        .start();
+                break;
+                
             case FADE:
             default:
                 // 默认淡入淡出由Glide处理
                 break;
         }
     }
+    
 
     /**
      * 启动图片显示定时器
@@ -1158,6 +1206,15 @@ public class PlaybackActivity extends FragmentActivity {
         int savedPlayMode = com.baidu.tv.player.utils.PreferenceUtils.getPlayMode(this);
         PlayMode newPlayMode = PlayMode.fromValue(savedPlayMode);
         viewModel.setPlayMode(newPlayMode);
+        
+        // 从SharedPreferences中读取图片特效并更新ViewModel
+        int savedImageEffect = com.baidu.tv.player.utils.PreferenceUtils.getImageEffect(this);
+        ImageEffect newImageEffect = ImageEffect.fromValue(savedImageEffect);
+        viewModel.setImageEffect(newImageEffect);
+        
+        // 从SharedPreferences中读取图片显示时长并更新ViewModel
+        int savedDisplayDuration = com.baidu.tv.player.utils.PreferenceUtils.getImageDisplayDuration(this);
+        viewModel.setImageDisplayDuration(savedDisplayDuration);
         
         Boolean isPlaying = viewModel.getIsPlaying().getValue();
         if (isPlaying != null && isPlaying) {

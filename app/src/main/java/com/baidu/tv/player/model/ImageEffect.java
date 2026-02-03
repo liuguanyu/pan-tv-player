@@ -10,6 +10,10 @@ public enum ImageEffect {
     EASE(1, "缓动"),
     FLOAT(2, "浮现"),
     BOUNCE(3, "跳动"),
+    BLINDS(5, "百叶窗"),
+    ZOOM(6, "放大"),
+    ROTATE(7, "旋转"),
+    SLIDE(8, "两侧划入"),
     RANDOM(4, "随机");
 
     private final int value;
@@ -30,10 +34,10 @@ public enum ImageEffect {
     }
 
     /**
-     * 获取随机特效（从FADE、EASE、FLOAT、BOUNCE中随机选择）
+     * 获取随机特效（从所有特效中随机选择）
      */
     public static ImageEffect getRandomEffect() {
-        ImageEffect[] effects = {FADE, EASE, FLOAT, BOUNCE};
+        ImageEffect[] effects = {FADE, EASE, FLOAT, BOUNCE, BLINDS, ZOOM, ROTATE, SLIDE};
         return effects[random.nextInt(effects.length)];
     }
 

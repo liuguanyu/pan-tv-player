@@ -28,7 +28,7 @@
         android:visibility="gone" />
 
     <!-- 图片展示容器 -->
-    <ImageView
+    <com.baidu.tv.player.ui.view.BlindsImageView
         android:id="@+id/iv_image_display"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
