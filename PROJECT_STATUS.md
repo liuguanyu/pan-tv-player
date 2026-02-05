@@ -135,6 +135,23 @@
 - ✅ 创建地点提取修复总结文档
   - [`LOCATION_EXTRACTION_FIX.md`](LOCATION_EXTRACTION_FIX.md) - 详细修复说明和测试建议
 
+#### 18. 图片背景优化 (2026-02-05新增)
+- ✅ 解决切换图片时亮/暗屏刺眼问题
+- ✅ 实现三种背景模式
+  - 纯黑色背景：传统模式，无额外开销
+  - 主色调背景：提取图片主色调作为背景，性能极佳
+  - 毛玻璃背景：图片全屏模糊效果，视觉体验极佳
+- ✅ 性能优化架构
+  - [`ImageBackgroundUtils.java`](app/src/main/java/com/baidu/tv/player/utils/ImageBackgroundUtils.java) - 核心处理逻辑
+  - [`BackgroundCache.java`](app/src/main/java/com/baidu/tv/player/utils/BackgroundCache.java) - LRU缓存管理
+  - 使用异步处理，避免阻塞UI线程
+  - 毛玻璃效果使用RenderScript硬件加速
+- ✅ 设置界面集成
+  - 在设置中添加背景模式选择选项
+  - 支持实时切换，设置立即生效
+- ✅ 创建功能说明文档
+  - [`IMAGE_BACKGROUND_FEATURE.md`](IMAGE_BACKGROUND_FEATURE.md) - 详细功能和性能说明
+
 ### 🚧 待实现的工作
 
 暂无

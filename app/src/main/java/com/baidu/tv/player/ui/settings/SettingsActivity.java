@@ -27,6 +27,7 @@ public class SettingsActivity extends FragmentActivity {
     private TextView tvDisplayDuration;
     private Switch switchShowLocation;
     private RadioGroup rgPlayMode;
+    private RadioGroup rgBackgroundMode;
     private Button btnLogout;
     
     private boolean isUpdatingEffectSelection = false; // 防止递归触发
@@ -48,6 +49,7 @@ public class SettingsActivity extends FragmentActivity {
         tvDisplayDuration = findViewById(R.id.tv_display_duration);
         switchShowLocation = findViewById(R.id.switch_show_location);
         rgPlayMode = findViewById(R.id.rg_play_mode);
+        rgBackgroundMode = findViewById(R.id.rg_background_mode);
         btnLogout = findViewById(R.id.btn_logout);
     }
 
@@ -113,6 +115,20 @@ public class SettingsActivity extends FragmentActivity {
                 rgPlayMode.check(R.id.rb_mode_reverse);
                 break;
         }
+        
+        // 加载背景模式设置
+        int backgroundMode = PreferenceUtils.getBackgroundMode(this);
+        switch (backgroundMode) {
+            case 0:
+                rgBackgroundMode.check(R.id.rb_background_black);
+                break;
+            case 1:
+                rgBackgroundMode.check(R.id.rb_background_color);
+                break;
+            case 2:
+                rgBackgroundMode.check(R.id.rb_background_blur);
+                break;
+        }
     }
 
     private void setupListeners() {
@@ -176,6 +192,21 @@ public class SettingsActivity extends FragmentActivity {
                 mode = PlayMode.SEQUENTIAL.getValue();
             }
             PreferenceUtils.savePlayMode(this, mode);
+        });
+        
+        // 背景模式选择
+        rgBackgroundMode.setOnCheckedChangeListener((group, bgCheckedId) -> {
+            int mode;
+            if (bgCheckedId == R.id.rb_background_black) {
+                mode = 0; // 纯黑色
+            } else if (bgCheckedId == R.id.rb_background_color) {
+                mode = 1; // 主色调
+            } else if (bgCheckedId == R.id.rb_background_blur) {
+                mode = 2; // 毛玻璃
+            } else {
+                mode = 1; // 默认主色调
+            }
+            PreferenceUtils.saveBackgroundMode(this, mode);
         });
         
         // 退出登录

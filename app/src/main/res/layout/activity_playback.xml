@@ -8,6 +8,16 @@
     android:background="@android:color/black"
     android:keepScreenOn="true">
 
+    <!-- 背景层：用于显示毛玻璃效果或主色调 -->
+    <ImageView
+        android:id="@+id/iv_background"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:background="@android:color/black"
+        android:alpha="0.8"
+        android:visibility="visible" />
+
     <!-- VLC视频播放器容器 -->
     <SurfaceView
         android:id="@+id/surface_view"

@@ -37,6 +37,8 @@ import com.baidu.tv.player.repository.PlaylistRepository;
 import com.baidu.tv.player.utils.LocationUtils;
 import com.baidu.tv.player.ui.view.BlindsImageView;
 import com.baidu.tv.player.utils.PlaylistCache;
+import com.baidu.tv.player.utils.ImageBackgroundUtils;
+import com.baidu.tv.player.utils.PreferenceUtils;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions;
 import com.bumptech.glide.request.RequestListener;
@@ -76,6 +78,7 @@ public class PlaybackActivity extends FragmentActivity {
     private SurfaceView surfaceView; // VLC Surface
     private PlayerView playerView;   // ExoPlayer View
     private BlindsImageView ivImageDisplay;
+    private ImageView ivBackground;  // 背景图层（毛玻璃或主色调）
     private View layoutControls;
     private TextView tvFileName;
     private TextView tvLocation;
@@ -211,6 +214,7 @@ public class PlaybackActivity extends FragmentActivity {
         surfaceView = findViewById(R.id.surface_view);
         playerView = findViewById(R.id.player_view);
         ivImageDisplay = findViewById(R.id.iv_image_display);
+        ivBackground = findViewById(R.id.iv_background);
         layoutControls = findViewById(R.id.layout_controls);
         tvFileName = findViewById(R.id.tv_file_name);
         tvLocation = findViewById(R.id.tv_location);
@@ -1000,6 +1004,12 @@ public class PlaybackActivity extends FragmentActivity {
         
         // 隐藏图片显示
         ivImageDisplay.setVisibility(View.GONE);
+        
+        // 重置背景为黑色（视频播放时不需要背景）
+        ivBackground.setBackgroundColor(android.graphics.Color.BLACK);
+        ivBackground.setImageBitmap(null);
+        ivBackground.setVisibility(View.VISIBLE);
+        
         updatePlayerIndicator();
         
         if (useVlc) {
@@ -1137,6 +1147,9 @@ public class PlaybackActivity extends FragmentActivity {
                             new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                                 applyImageEffect(actualEffect);
                             }, actualEffect == ImageEffect.FADE ? 0 : 150);
+                            
+                            // 更新背景（主色调或毛玻璃效果）
+                            updateImageBackground(resource);
                             return false;
                         }
                     })
@@ -1240,6 +1253,112 @@ public class PlaybackActivity extends FragmentActivity {
             case FADE:
             default:
                 // FADE效果完全由Glide的CrossFade处理，不需要额外动画
+                break;
+        }
+    }
+    
+    /**
+     * 更新图片背景（主色调或毛玻璃效果）
+     * 在图片加载完成后调用
+     */
+    private void updateImageBackground(android.graphics.drawable.Drawable imageDrawable) {
+        if (imageDrawable == null || ivBackground == null) {
+            return;
+        }
+        
+        // 获取当前图片URL用于缓存
+        String imageUrl = viewModel.getPreparedMediaUrl().getValue();
+        if (imageUrl == null || imageUrl.isEmpty()) {
+            imageUrl = "unknown";
+        }
+        final String finalImageUrl = imageUrl;
+        
+        // 从设置中获取背景模式
+        // 0: 纯黑色背景, 1: 主色调背景, 2: 毛玻璃背景
+        int backgroundMode = PreferenceUtils.getBackgroundMode(this);
+        
+        switch (backgroundMode) {
+            case 0: // 纯黑色背景
+                ivBackground.setBackgroundColor(android.graphics.Color.BLACK);
+                ivBackground.setImageBitmap(null);
+                ivBackground.setVisibility(View.VISIBLE);
+                break;
+                
+            case 1: // 主色调背景
+                // 在后台线程中提取主色调
+                new Thread(() -> {
+                    try {
+                        int dominantColor = ImageBackgroundUtils.extractDominantColor(
+                            PlaybackActivity.this,
+                            finalImageUrl,
+                            imageDrawable
+                        );
+                        runOnUiThread(() -> {
+                            ivBackground.setBackgroundColor(dominantColor);
+                            ivBackground.setImageBitmap(null);
+                            ivBackground.setVisibility(View.VISIBLE);
+                        });
+                    } catch (Exception e) {
+                        android.util.Log.e("PlaybackActivity", "提取主色调失败", e);
+                        runOnUiThread(() -> {
+                            ivBackground.setBackgroundColor(android.graphics.Color.BLACK);
+                            ivBackground.setImageBitmap(null);
+                            ivBackground.setVisibility(View.VISIBLE);
+                        });
+                    }
+                }).start();
+                break;
+                
+            case 2: // 毛玻璃背景
+                // 在后台线程中生成模糊背景
+                new Thread(() -> {
+                    try {
+                        android.graphics.Bitmap blurredBitmap = ImageBackgroundUtils.createBlurredBackground(
+                            PlaybackActivity.this,
+                            finalImageUrl,
+                            imageDrawable,
+                            15.0f,  // 模糊半径
+                            8       // 缩小倍数
+                        );
+                        
+                        runOnUiThread(() -> {
+                            if (blurredBitmap != null) {
+                                ivBackground.setImageBitmap(blurredBitmap);
+                                ivBackground.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                                ivBackground.setVisibility(View.VISIBLE);
+                            } else {
+                                // 如果模糊失败，回退到主色调
+                                int dominantColor = ImageBackgroundUtils.extractDominantColor(
+                                    PlaybackActivity.this,
+                                    finalImageUrl,
+                                    imageDrawable
+                                );
+                                ivBackground.setBackgroundColor(dominantColor);
+                                ivBackground.setImageBitmap(null);
+                                ivBackground.setVisibility(View.VISIBLE);
+                            }
+                        });
+                    } catch (Exception e) {
+                        android.util.Log.e("PlaybackActivity", "生成模糊背景失败", e);
+                        runOnUiThread(() -> {
+                            // 回退到主色调
+                            int dominantColor = ImageBackgroundUtils.extractDominantColor(
+                                PlaybackActivity.this,
+                                finalImageUrl,
+                                imageDrawable
+                            );
+                            ivBackground.setBackgroundColor(dominantColor);
+                            ivBackground.setImageBitmap(null);
+                            ivBackground.setVisibility(View.VISIBLE);
+                        });
+                    }
+                }).start();
+                break;
+                
+            default:
+                ivBackground.setBackgroundColor(android.graphics.Color.BLACK);
+                ivBackground.setImageBitmap(null);
+                ivBackground.setVisibility(View.VISIBLE);
                 break;
         }
     }

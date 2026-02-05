@@ -252,6 +252,70 @@
                 </RadioGroup>
             </LinearLayout>
 
+            <!-- 图片背景模式 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                android:addStatesFromChildren="true"
+                android:background="@drawable/selector_item_background"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="图片背景模式"
+                    android:textColor="@color/text_primary"
+                    android:textSize="20sp" />
+
+                <RadioGroup
+                    android:id="@+id/rg_background_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_background_black"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="16dp"
+                        android:text="纯黑色"
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
+
+                    <RadioButton
+                        android:id="@+id/rb_background_color"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="16dp"
+                        android:text="主色调"
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
+
+                    <RadioButton
+                        android:id="@+id/rb_background_blur"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="毛玻璃"
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
+                </RadioGroup>
+                
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="提示：主色调模式性能最佳，毛玻璃视觉效果最好"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="14sp"
+                    android:alpha="0.7" />
+            </LinearLayout>
+
             <!-- 地点显示开关 -->
             <LinearLayout
                 android:layout_width="match_parent"

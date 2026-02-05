@@ -28,12 +28,16 @@ public class PreferenceUtils {
     
     // 播放模式相关
     private static final String KEY_PLAY_MODE = "play_mode";
+    
+    // 背景模式相关
+    private static final String KEY_BACKGROUND_MODE = "background_mode";
 
     // 默认值
     private static final int DEFAULT_IMAGE_EFFECT = 0; // 淡入淡出
     private static final int DEFAULT_IMAGE_DISPLAY_DURATION = 10000; // 10秒
     private static final int DEFAULT_IMAGE_TRANSITION_DURATION = 1000; // 1秒
     private static final boolean DEFAULT_SHOW_LOCATION = true;
+    private static final int DEFAULT_BACKGROUND_MODE = 1; // 主色调背景
 
     /**
      * 获取SharedPreferences实例
@@ -250,5 +254,27 @@ public class PreferenceUtils {
     public static int getPlayMode(Context context) {
         // 默认为0 (SEQUENTIAL)
         return getPreferences(context).getInt(KEY_PLAY_MODE, 0);
+    }
+    
+    // ========== 背景模式相关 ==========
+    
+    /**
+     * 保存背景模式
+     * 0: 纯黑色背景
+     * 1: 主色调背景
+     * 2: 毛玻璃背景
+     */
+    public static void saveBackgroundMode(Context context, int mode) {
+        getPreferences(context).edit()
+                .putInt(KEY_BACKGROUND_MODE, mode)
+                .apply();
+    }
+    
+    /**
+     * 获取背景模式
+     */
+    public static int getBackgroundMode(Context context) {
+        // 默认为1 (主色调背景)
+        return getPreferences(context).getInt(KEY_BACKGROUND_MODE, DEFAULT_BACKGROUND_MODE);
     }
 }
