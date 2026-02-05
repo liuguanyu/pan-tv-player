@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="280dp"
-    android:layout_height="160dp"
+    android:layout_width="240dp"
+    android:layout_height="140dp"
     android:layout_marginEnd="16dp"
     android:focusable="true"
     android:foreground="@drawable/card_selector"
     android:stateListAnimator="@animator/focus_zoom"
-    app:cardCornerRadius="12dp"
+    app:cardCornerRadius="10dp"
     app:cardBackgroundColor="@color/surface">
 
     <!-- 背景图片占位符 -->
@@ -39,7 +39,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="文件夹名称"
-            android:textSize="16sp"
+            android:textSize="14sp"
             android:textStyle="bold"
             android:textColor="@color/white"
             android:maxLines="1"
@@ -51,7 +51,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="/路径/到/文件夹"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:textColor="#CCCCCC"
             android:maxLines="1"
             android:ellipsize="middle"
@@ -70,12 +70,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="图片"
-                android:textSize="10sp"
+                android:textSize="9sp"
                 android:textColor="@color/white"
-                android:paddingStart="6dp"
-                android:paddingEnd="6dp"
-                android:paddingTop="2dp"
-                android:paddingBottom="2dp"
+                android:paddingStart="5dp"
+                android:paddingEnd="5dp"
+                android:paddingTop="1dp"
+                android:paddingBottom="1dp"
                 android:background="#80FF4081"
                 android:focusable="false"/>
 
@@ -84,9 +84,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="10个文件"
-                android:textSize="10sp"
+                android:textSize="9sp"
                 android:textColor="#CCCCCC"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="6dp"
                 android:focusable="false"/>
         </LinearLayout>
     </LinearLayout>

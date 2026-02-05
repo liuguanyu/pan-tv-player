@@ -19,10 +19,12 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="我的播放列表"
-            android:textSize="24sp"
+            android:textSize="28sp"
             android:textStyle="bold"
             android:textColor="@color/white"
-            android:paddingBottom="10dp" />
+            android:paddingStart="40dp"
+            android:paddingEnd="40dp"
+            android:paddingBottom="16dp" />
 
         <!-- 暂无播放列表提示 -->
         <TextView
@@ -30,7 +32,7 @@
             android:layout_width="match_parent"
             android:layout_height="180dp"
             android:gravity="center"
-            android:text="暂无播放列表，请点击下方 + 号创建"
+            android:text="暂无播放列表，请点击右上角 + 号创建"
             android:textSize="18sp"
             android:textColor="#80FFFFFF"
             android:visibility="gone"
@@ -40,104 +42,12 @@
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/rv_playlists"
             android:layout_width="match_parent"
-            android:layout_height="220dp"
+            android:layout_height="200dp"
             android:clipToPadding="false"
-            android:paddingStart="0dp"
-            android:paddingEnd="0dp"
+            android:paddingStart="40dp"
+            android:paddingEnd="40dp"
             android:focusable="false"
             android:descendantFocusability="afterDescendants" />
-    </LinearLayout>
-
-    <!-- 快速操作区域 -->
-    <LinearLayout
-        android:id="@+id/ll_quick_actions"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_below="@id/ll_playlist_section"
-        android:layout_marginTop="40dp"
-        android:orientation="vertical">
-
-        <!-- 快速操作标题 -->
-        <TextView
-            android:id="@+id/tv_quick_title"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="快速操作"
-            android:textSize="28sp"
-            android:textStyle="bold"
-            android:textColor="@color/white"
-            android:paddingBottom="20dp" />
-
-        <!-- 快速操作按钮 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:weightSum="2">
-
-            <!-- 浏览文件按钮 -->
-            <LinearLayout
-                android:id="@+id/btn_browse_files"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="16dp"
-                android:orientation="horizontal"
-                android:gravity="center"
-                android:focusable="true"
-                android:clickable="true"
-                android:padding="12dp"
-                android:background="@drawable/selector_item_background"
-                android:stateListAnimator="@animator/focus_zoom">
-
-                <ImageView
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:src="@android:drawable/ic_menu_view"
-                    android:contentDescription="浏览文件" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="16dp"
-                    android:text="浏览文件"
-                    android:textSize="18sp"
-                    android:textColor="@color/white"
-                    android:textStyle="bold" />
-            </LinearLayout>
-
-            <!-- 创建播放列表按钮 -->
-            <LinearLayout
-                android:id="@+id/btn_create_playlist"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="16dp"
-                android:orientation="horizontal"
-                android:gravity="center"
-                android:focusable="true"
-                android:clickable="true"
-                android:padding="12dp"
-                android:background="@drawable/selector_item_background"
-                android:stateListAnimator="@animator/focus_zoom">
-
-                <ImageView
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:src="@android:drawable/ic_menu_add"
-                    android:contentDescription="创建播放列表" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="16dp"
-                    android:text="创建播放列表"
-                    android:textSize="18sp"
-                    android:textColor="@color/white"
-                    android:textStyle="bold" />
-            </LinearLayout>
-        </LinearLayout>
     </LinearLayout>
 
     <!-- 最近任务区域 -->
@@ -145,9 +55,8 @@
         android:id="@+id/ll_recent_section"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_below="@id/ll_quick_actions"
+        android:layout_below="@id/ll_playlist_section"
         android:layout_marginTop="40dp"
-        android:layout_alignParentBottom="true"
         android:orientation="vertical">
 
         <!-- 最近任务标题 -->
@@ -159,16 +68,57 @@
             android:textSize="28sp"
             android:textStyle="bold"
             android:textColor="@color/white"
-            android:paddingBottom="20dp" />
+            android:paddingStart="40dp"
+            android:paddingEnd="40dp"
+            android:paddingBottom="16dp" />
 
         <!-- 最近任务列表 - 横向滚动 -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/rv_recent_tasks"
             android:layout_width="match_parent"
-            android:layout_height="180dp"
+            android:layout_height="160dp"
             android:clipToPadding="false"
-            android:paddingStart="0dp"
-            android:paddingEnd="0dp" />
+            android:paddingStart="40dp"
+            android:paddingEnd="40dp" />
+    </LinearLayout>
+
+    <!-- 右上角操作按钮 - 放在最后以调整焦点顺序 -->
+    <LinearLayout
+        android:id="@+id/ll_top_actions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentEnd="true"
+        android:layout_marginTop="20dp"
+        android:layout_marginEnd="30dp"
+        android:orientation="horizontal">
+
+        <!-- 浏览文件按钮 -->
+        <ImageView
+            android:id="@+id/btn_browse_files"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginEnd="16dp"
+            android:src="@android:drawable/ic_menu_view"
+            android:contentDescription="浏览文件"
+            android:focusable="true"
+            android:clickable="true"
+            android:padding="12dp"
+            android:background="@drawable/circle_button_selector"
+            android:stateListAnimator="@animator/focus_zoom" />
+
+        <!-- 创建播放列表按钮 -->
+        <ImageView
+            android:id="@+id/btn_create_playlist"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:src="@android:drawable/ic_menu_add"
+            android:contentDescription="创建播放列表"
+            android:focusable="true"
+            android:clickable="true"
+            android:padding="12dp"
+            android:background="@drawable/circle_button_selector"
+            android:stateListAnimator="@animator/focus_zoom" />
     </LinearLayout>
 
 </RelativeLayout>

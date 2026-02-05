@@ -6,6 +6,7 @@ import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -39,8 +40,8 @@ public class MainFragment extends Fragment {
     private RecyclerView rvRecentTasks;
     private TextView tvRecentTitle;
     private TextView tvNoPlaylist;
-    private LinearLayout btnBrowseFiles;
-    private LinearLayout btnCreatePlaylist;
+    private ImageView btnBrowseFiles;
+    private ImageView btnCreatePlaylist;
     
     @Nullable
     @Override
