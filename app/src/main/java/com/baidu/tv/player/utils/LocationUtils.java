@@ -8,6 +8,8 @@ import android.media.ExifInterface;
 import android.media.MediaMetadataRetriever;
 import android.util.Log;
 
+import com.baidu.tv.player.config.BaiduConfig;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -45,8 +47,8 @@ public class LocationUtils {
     // Nominatim API 基础URL（完全免费，不需要API Key）
     private static final String NOMINATIM_API_URL = "https://nominatim.openstreetmap.org/reverse";
     
-    // 高德地图API配置（如果未配置则跳过）
-    private static final String AMAP_API_KEY = "b6c83f1c74ed02e0658941177efffed7"; // 已配置高德地图API Key
+    // 高德地图API配置（从配置文件读取）
+    private static final String AMAP_API_KEY = BaiduConfig.AMAP_API_KEY;
     private static final String AMAP_API_URL = "https://restapi.amap.com/v3/geocode/regeo";
     
     // 请求超时时间（毫秒）- 缩短超时时间提高响应速度

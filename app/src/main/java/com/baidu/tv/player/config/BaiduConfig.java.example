@@ -14,13 +14,16 @@ public class BaiduConfig {
     public static final String SECRET_KEY = "YOUR_SECRET_KEY";
     public static final String SIGN_KEY = "YOUR_SIGN_KEY";
     
+    // 高德地图API配置
+    public static final String AMAP_API_KEY = "YOUR_AMAP_API_KEY";
+    
     // OAuth配置
     public static final String REDIRECT_URI = "oob";
     public static final String SCOPE = "basic,netdisk";
     public static final String DEVICE_NAME = "百度网盘TV播放器";
     
     // API地址
-    public static final String API_BASE_URL = "https://pan.baidu.com/rest/2.0";
-    public static final String OAUTH_URL = "https://openapi.baidu.com/oauth/2.0";
-    public static final String PCS_URL = "https://d.pcs.baidu.com/rest/2.0/pcs";
+    public static final String API_BASE_URL = "https://pan.baidu.com/rest/2.0/";
+    public static final String OAUTH_URL = "https://openapi.baidu.com/oauth/2.0/";
+    public static final String PCS_URL = "https://d.pcs.baidu.com/rest/2.0/pcs/";
 }
