@@ -5,6 +5,8 @@
     android:layout_height="160dp"
     android:layout_marginEnd="16dp"
     android:focusable="true"
+    android:foreground="@drawable/card_selector"
+    android:stateListAnimator="@animator/focus_zoom"
     app:cardCornerRadius="12dp"
     app:cardBackgroundColor="@color/surface">
 
@@ -29,7 +31,8 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
         android:orientation="vertical"
-        android:padding="12dp">
+        android:padding="12dp"
+        android:focusable="false">
 
         <TextView
             android:id="@+id/tv_folder_name"
@@ -40,7 +43,8 @@
             android:textStyle="bold"
             android:textColor="@color/white"
             android:maxLines="1"
-            android:ellipsize="end"/>
+            android:ellipsize="end"
+            android:focusable="false"/>
 
         <TextView
             android:id="@+id/tv_folder_path"
@@ -51,13 +55,15 @@
             android:textColor="#CCCCCC"
             android:maxLines="1"
             android:ellipsize="middle"
-            android:layout_marginTop="2dp"/>
+            android:layout_marginTop="2dp"
+            android:focusable="false"/>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginTop="4dp">
+            android:layout_marginTop="4dp"
+            android:focusable="false">
 
             <TextView
                 android:id="@+id/tv_media_type"
@@ -70,7 +76,8 @@
                 android:paddingEnd="6dp"
                 android:paddingTop="2dp"
                 android:paddingBottom="2dp"
-                android:background="#80FF4081"/>
+                android:background="#80FF4081"
+                android:focusable="false"/>
 
             <TextView
                 android:id="@+id/tv_file_count"
@@ -79,7 +86,8 @@
                 android:text="10个文件"
                 android:textSize="10sp"
                 android:textColor="#CCCCCC"
-                android:layout_marginStart="8dp"/>
+                android:layout_marginStart="8dp"
+                android:focusable="false"/>
         </LinearLayout>
     </LinearLayout>
 </androidx.cardview.widget.CardView>

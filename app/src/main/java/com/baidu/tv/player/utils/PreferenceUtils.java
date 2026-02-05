@@ -31,7 +31,7 @@ public class PreferenceUtils {
 
     // 默认值
     private static final int DEFAULT_IMAGE_EFFECT = 0; // 淡入淡出
-    private static final int DEFAULT_IMAGE_DISPLAY_DURATION = 5000; // 5秒
+    private static final int DEFAULT_IMAGE_DISPLAY_DURATION = 10000; // 10秒
     private static final int DEFAULT_IMAGE_TRANSITION_DURATION = 1000; // 1秒
     private static final boolean DEFAULT_SHOW_LOCATION = true;
 

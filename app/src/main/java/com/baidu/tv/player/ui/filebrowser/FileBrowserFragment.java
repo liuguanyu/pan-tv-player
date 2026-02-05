@@ -239,6 +239,9 @@ public class FileBrowserFragment extends Fragment {
         
         LinearLayoutManager layoutManager = new LinearLayoutManager(requireContext());
         recyclerView.setLayoutManager(layoutManager);
+        // 启用RecyclerView的焦点搜索
+        recyclerView.setDescendantFocusability(android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        recyclerView.setFocusable(true);
         
         adapter = new FileAdapter();
         adapter.setMultiSelectMode(multiSelectMode);

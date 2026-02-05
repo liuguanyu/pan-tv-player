@@ -44,7 +44,9 @@
             android:layout_height="220dp"
             android:clipToPadding="false"
             android:paddingStart="0dp"
-            android:paddingEnd="48dp" />
+            android:paddingEnd="48dp"
+            android:focusable="false"
+            android:descendantFocusability="afterDescendants" />
     </LinearLayout>
 
     <!-- 快速操作区域 -->
@@ -87,7 +89,8 @@
                 android:focusable="true"
                 android:clickable="true"
                 android:padding="12dp"
-                android:background="@drawable/selector_item_background">
+                android:background="@drawable/selector_item_background"
+                android:stateListAnimator="@animator/focus_zoom">
 
                 <ImageView
                     android:layout_width="48dp"
@@ -117,7 +120,8 @@
                 android:focusable="true"
                 android:clickable="true"
                 android:padding="12dp"
-                android:background="@drawable/selector_item_background">
+                android:background="@drawable/selector_item_background"
+                android:stateListAnimator="@animator/focus_zoom">
 
                 <ImageView
                     android:layout_width="48dp"

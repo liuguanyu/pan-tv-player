@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.cardview.widget.CardView 
+<androidx.cardview.widget.CardView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -7,6 +7,8 @@
     android:layout_margin="8dp"
     android:focusable="true"
     android:focusableInTouchMode="true"
+    android:foreground="@drawable/card_selector"
+    android:stateListAnimator="@animator/focus_zoom"
     app:cardBackgroundColor="@color/card_background"
     app:cardCornerRadius="8dp"
     app:cardElevation="4dp">
@@ -15,7 +17,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:padding="16dp">
+        android:padding="16dp"
+        android:focusable="false">
 
         <!-- 文件图标 -->
         <ImageView
@@ -24,7 +27,8 @@
             android:layout_height="48dp"
             android:layout_gravity="center_vertical"
             android:contentDescription="文件图标"
-            android:scaleType="centerCrop" />
+            android:scaleType="centerCrop"
+            android:focusable="false" />
 
         <!-- 文件信息 -->
         <LinearLayout
@@ -32,7 +36,8 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="16dp"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:focusable="false">
 
             <!-- 文件名 -->
             <TextView
@@ -43,7 +48,8 @@
                 android:textSize="18sp"
                 android:maxLines="2"
                 android:ellipsize="end"
-                android:text="文件名.jpg" />
+                android:text="文件名.jpg"
+                android:focusable="false" />
 
             <!-- 文件大小/修改时间 -->
             <TextView
@@ -53,7 +59,8 @@
                 android:layout_marginTop="4dp"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp"
-                android:text="1.5 MB · 2024-01-01" />
+                android:text="1.5 MB · 2024-01-01"
+                android:focusable="false" />
 
         </LinearLayout>
 
@@ -66,7 +73,8 @@
             android:layout_marginStart="16dp"
             android:visibility="gone"
             android:src="@android:drawable/checkbox_on_background"
-            android:contentDescription="已选中" />
+            android:contentDescription="已选中"
+            android:focusable="false" />
 
     </LinearLayout>
 

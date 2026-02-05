@@ -156,6 +156,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.FileViewHolder
                             .load(file.getThumbs().getUrl1())
                             .placeholder(android.R.drawable.ic_menu_gallery)
                             .error(android.R.drawable.ic_menu_gallery)
+                            .timeout(30000)  // 设置30秒超时
                             .into(ivFileIcon);
                 } else {
                     ivFileIcon.setImageResource(android.R.drawable.ic_menu_gallery);
@@ -167,6 +168,7 @@ public class FileAdapter extends RecyclerView.Adapter<FileAdapter.FileViewHolder
                             .load(file.getThumbs().getUrl1())
                             .placeholder(android.R.drawable.ic_media_play)
                             .error(android.R.drawable.ic_media_play)
+                            .timeout(30000)  // 设置30秒超时
                             .into(ivFileIcon);
                 } else {
                     ivFileIcon.setImageResource(android.R.drawable.ic_media_play);

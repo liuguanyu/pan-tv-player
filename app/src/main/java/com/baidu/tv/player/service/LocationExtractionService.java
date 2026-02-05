@@ -64,8 +64,14 @@ public class LocationExtractionService extends IntentService {
             } else {
                 location = LocationUtils.getLocationFromImage(this, url);
             }
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // 捕获所有异常和错误，包括 RuntimeException 和 native 崩溃
+            // 这样可以防止服务崩溃影响主应用
             Log.e(TAG, "Error during extraction: " + e.getMessage(), e);
+            Log.e(TAG, "Exception type: " + e.getClass().getName());
+            if (e instanceof RuntimeException) {
+                Log.e(TAG, "⚠️ RuntimeException 在地点提取过程中发生");
+            }
         }
 
         if (receiver != null) {

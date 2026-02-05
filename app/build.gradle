@@ -58,12 +58,14 @@ dependencies {
     
     // Image loading
     implementation 'com.github.bumptech.glide:glide:4.15.1'
+    implementation 'com.github.bumptech.glide:okhttp3-integration:4.15.1'
+    annotationProcessor 'com.github.bumptech.glide:compiler:4.15.1'
     
-    // Video player - VLC for comprehensive format support including HEVC/Dolby Vision
-    implementation 'org.videolan.android:libvlc-all:3.5.1' // 使用更稳定的版本
-    
-    // ExoPlayer as fallback
+    // Video player - ExoPlayer (primary) for optimal performance on Android TV
     implementation 'com.google.android.exoplayer:exoplayer:2.18.7'
+    
+    // VLC as fallback for comprehensive format support including HEVC/Dolby Vision
+    implementation 'org.videolan.android:libvlc-all:3.5.1'
     
     // QR Code
     implementation 'com.google.zxing:core:3.5.1'

@@ -66,11 +66,17 @@ public class MainFragment extends Fragment {
         playlistAdapter = new PlaylistAdapter(requireContext());
         rvPlaylists.setLayoutManager(new LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false));
         rvPlaylists.setAdapter(playlistAdapter);
+        // 启用RecyclerView的焦点搜索
+        rvPlaylists.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        rvPlaylists.setHasFixedSize(true);
         
         // 设置最近任务RecyclerView为横向
         recentTaskAdapter = new RecentTaskAdapter();
         rvRecentTasks.setLayoutManager(new LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false));
         rvRecentTasks.setAdapter(recentTaskAdapter);
+        // 启用RecyclerView的焦点搜索，但禁用RecyclerView本身的焦点（电视屏幕上可能不可见）
+        rvRecentTasks.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        rvRecentTasks.setFocusable(false);
         
         // 设置点击事件
         btnBrowseFiles.setOnClickListener(v -> openFileBrowser(MediaType.ALL));
@@ -110,10 +116,19 @@ public class MainFragment extends Fragment {
             if (playlists == null || playlists.isEmpty()) {
                 rvPlaylists.setVisibility(View.GONE);
                 tvNoPlaylist.setVisibility(View.VISIBLE);
+                // 没有播放列表，默认聚焦到浏览文件按钮
+                btnBrowseFiles.post(() -> btnBrowseFiles.requestFocus());
             } else {
                 rvPlaylists.setVisibility(View.VISIBLE);
                 tvNoPlaylist.setVisibility(View.GONE);
                 playlistAdapter.setPlaylists(playlists);
+                // 有播放列表，延迟请求第一个项的焦点
+                rvPlaylists.post(() -> {
+                    View firstChild = rvPlaylists.getLayoutManager().findViewByPosition(0);
+                    if (firstChild != null) {
+                        firstChild.requestFocus();
+                    }
+                });
             }
         });
     }
@@ -278,7 +293,10 @@ public class MainFragment extends Fragment {
         super.onResume();
         // 设置按键监听
         getView().setFocusableInTouchMode(true);
-        getView().requestFocus();
+        // 不让根视图获得焦点，而是让可见的子元素获得焦点
+        // getView().requestFocus();
+        // 确保焦点在可见的元素上
+        requestFocusOnVisibleElement();
         getView().setOnKeyListener((v, keyCode, event) -> {
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
                 // 菜单键打开设置
@@ -304,5 +322,30 @@ public class MainFragment extends Fragment {
     private void openSettings() {
         Intent intent = new Intent(requireContext(), com.baidu.tv.player.ui.settings.SettingsActivity.class);
         startActivity(intent);
+    }
+    
+    /**
+     * 请求焦点到可见的元素
+     */
+    private void requestFocusOnVisibleElement() {
+        // 延迟执行，确保布局已完成
+        getView().post(() -> {
+            // 优先聚焦到播放列表的第一个项
+            if (rvPlaylists.getVisibility() == View.VISIBLE && rvPlaylists.getAdapter() != null
+                && rvPlaylists.getAdapter().getItemCount() > 0) {
+                View firstChild = rvPlaylists.getLayoutManager().findViewByPosition(0);
+                if (firstChild != null && firstChild.requestFocus()) {
+                    return;
+                }
+            }
+            // 如果没有播放列表，聚焦到浏览文件按钮
+            if (btnBrowseFiles.getVisibility() == View.VISIBLE && btnBrowseFiles.requestFocus()) {
+                return;
+            }
+            // 最后尝试聚焦到创建播放列表按钮
+            if (btnCreatePlaylist.getVisibility() == View.VISIBLE) {
+                btnCreatePlaylist.requestFocus();
+            }
+        });
     }
 }

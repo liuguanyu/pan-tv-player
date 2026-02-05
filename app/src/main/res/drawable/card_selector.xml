@@ -2,20 +2,12 @@
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
         <shape android:shape="rectangle">
-            <solid android:color="@color/item_focused" />
             <stroke android:width="5dp" android:color="@color/item_focused_bright" />
-            <corners android:radius="8dp" />
-        </shape>
-    </item>
-    <item android:state_pressed="true">
-        <shape android:shape="rectangle">
-            <solid android:color="@color/item_focused" />
             <corners android:radius="8dp" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="@color/item_normal" />
             <corners android:radius="8dp" />
         </shape>
     </item>

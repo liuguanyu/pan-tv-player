@@ -58,7 +58,12 @@ import java.util.Locale;
 
 /**
  * 播放器Activity
- * 支持 VLC (软解码) 和 ExoPlayer (硬解码)
+ * 默认使用 ExoPlayer (主力播放器)，失败时自动切换到 VLC (备用播放器)
+ *
+ * 播放器策略：
+ * 1. 主力使用 ExoPlayer - Google 官方推荐，性能更好，适合 Android TV
+ * 2. ExoPlayer 失败时自动切换到 VLC - 支持更多格式（HEVC/H.265 等）
+ * 3. 两者都失败则跳过当前文件
  */
 public class PlaybackActivity extends FragmentActivity {
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1001;
@@ -74,6 +79,7 @@ public class PlaybackActivity extends FragmentActivity {
     private View layoutControls;
     private TextView tvFileName;
     private TextView tvLocation;
+    private TextView tvPlayerIndicator; // 播放器指示器
     private TextView tvCurrentTime;
     private TextView tvTotalTime;
     private SeekBar seekbarProgress;
@@ -87,11 +93,26 @@ public class PlaybackActivity extends FragmentActivity {
     private LibVLC libVLC;
     private MediaPlayer vlcMediaPlayer;
     
-    // ExoPlayer 播放器 (备用)
+    // ExoPlayer 播放器 (主力播放器)
     private ExoPlayer exoPlayer;
     
     // 播放模式：true使用VLC，false使用ExoPlayer
-    private boolean useVlc = true; 
+    // 默认使用 ExoPlayer (主力播放器)，失败时切换到 VLC
+    private boolean useVlc = false;
+    
+    // 错误重试计数
+    private int vlcErrorCount = 0;
+    private static final int MAX_VLC_RETRIES = 2;
+    
+    // ExoPlayer 错误重试计数
+    private int exoErrorCount = 0;
+    private static final int MAX_EXO_RETRIES = 1;
+    
+    // 当前播放的URL
+    private String currentMediaUrl = null;
+    
+    // 记录最后一次prepare的时间，用于性能分析
+    private long lastPrepareTime = 0;
     
     // 图片播放相关
     private Handler imageHandler;
@@ -136,6 +157,55 @@ public class PlaybackActivity extends FragmentActivity {
         initData();
         setupClickListeners();
     }
+    
+    @Override
+    protected void onResume() {
+        super.onResume();
+        android.util.Log.d("PlaybackActivity", "onResume called");
+        
+        // 从设置页返回时重新加载配置
+        viewModel.reloadSettings();
+        
+        FileInfo currentFile = viewModel.getCurrentFile();
+        if (currentFile == null) {
+            android.util.Log.d("PlaybackActivity", "onResume: currentFile is null");
+            return;
+        }
+        
+        Boolean isPlaying = viewModel.getIsPlaying().getValue();
+        if (isPlaying != null && isPlaying) {
+            if (currentFile.isVideo()) {
+                // 视频：恢复播放
+                android.util.Log.d("PlaybackActivity", "onResume: 恢复视频播放");
+                if (useVlc && vlcMediaPlayer != null && !vlcMediaPlayer.isPlaying()) {
+                    vlcMediaPlayer.play();
+                } else if (exoPlayer != null && !exoPlayer.isPlaying()) {
+                    exoPlayer.setPlayWhenReady(true);
+                }
+            } else if (currentFile.isImage()) {
+                // 图片：需要重新显示图片（因为可能已经被清空或隐藏）
+                android.util.Log.d("PlaybackActivity", "onResume: 重新显示图片");
+                
+                // 确保图片显示View可见
+                ivImageDisplay.setVisibility(View.VISIBLE);
+                surfaceView.setVisibility(View.GONE);
+                playerView.setVisibility(View.GONE);
+                
+                // 如果图片当前不可见或为空，重新加载
+                String mediaUrl = viewModel.getPreparedMediaUrl().getValue();
+                if (mediaUrl != null && !mediaUrl.isEmpty()) {
+                    // 如果ImageView中没有图片，或者我们想确保它被刷新
+                    if (ivImageDisplay.getDrawable() == null) {
+                        android.util.Log.d("PlaybackActivity", "onResume: 重新加载图片 URL");
+                        playImageWithUrl(mediaUrl);
+                    }
+                }
+                
+                // 重新启动定时器以应用新的显示时长
+                startImageDisplayTimer();
+            }
+        }
+    }
 
     private void initViews() {
         surfaceView = findViewById(R.id.surface_view);
@@ -144,6 +214,7 @@ public class PlaybackActivity extends FragmentActivity {
         layoutControls = findViewById(R.id.layout_controls);
         tvFileName = findViewById(R.id.tv_file_name);
         tvLocation = findViewById(R.id.tv_location);
+        tvPlayerIndicator = findViewById(R.id.tv_player_indicator);
         tvCurrentTime = findViewById(R.id.tv_current_time);
         tvTotalTime = findViewById(R.id.tv_total_time);
         seekbarProgress = findViewById(R.id.seekbar_progress);
@@ -168,7 +239,7 @@ public class PlaybackActivity extends FragmentActivity {
             ArrayList<String> options = new ArrayList<>();
             // 启用详细日志
             options.add("-vvv");
-            // 尝试硬件加速，如果失败则回退到软解码
+            // 使用硬件加速，默认设置（让VLC自动选择最佳解码器）
             options.add("--avcodec-hw=any");
             // 增加网络缓存以提高稳定性
             options.add("--network-caching=2000");
@@ -215,33 +286,67 @@ public class PlaybackActivity extends FragmentActivity {
                         
                         double screenRatio = (double) screenWidth / screenHeight;
                         
-                        // SurfaceView始终保持全屏
+                        // 判断视频是横屏还是竖屏 (使用最终显示比例判断)
+                        boolean isLandscape = finalVideoRatio >= 1.0;
+                        
                         android.widget.FrameLayout.LayoutParams lp =
                             (android.widget.FrameLayout.LayoutParams) surfaceView.getLayoutParams();
-                        lp.width = screenWidth;
-                        lp.height = screenHeight;
-                        lp.gravity = android.view.Gravity.CENTER;
-                        surfaceView.setLayoutParams(lp);
                         
-                        // 使用VLC的API控制视频显示
-                        // 计算目标宽高比字符串
-                        String targetAspectRatio;
-                        if (finalVideoRatio > screenRatio) {
-                            // 横版视频：宽度占满，高度按比例
-                            targetAspectRatio = screenWidth + ":" + (int)(screenWidth / finalVideoRatio);
+                        if (isLandscape) {
+                            // 横屏视频：尽量充满全屏 (CenterCrop 模式)
+                            // 计算能够填满屏幕的 SurfaceView 尺寸，同时保持视频比例
+                            int surfaceWidth, surfaceHeight;
+                            
+                            if (finalVideoRatio > screenRatio) {
+                                // 视频比屏幕更宽 (例如 21:9 在 16:9 屏幕)
+                                // 以高度为基准填满屏幕，宽度超出屏幕 (裁剪左右)
+                                surfaceHeight = screenHeight;
+                                surfaceWidth = (int) (screenHeight * finalVideoRatio);
+                            } else {
+                                // 视频比屏幕更窄 (例如 4:3 在 16:9 屏幕)
+                                // 以宽度为基准填满屏幕，高度超出屏幕 (裁剪上下)
+                                surfaceWidth = screenWidth;
+                                surfaceHeight = (int) (screenWidth / finalVideoRatio);
+                            }
+                            
+                            lp.width = surfaceWidth;
+                            lp.height = surfaceHeight;
+                            lp.gravity = android.view.Gravity.CENTER;
+                            surfaceView.setLayoutParams(lp);
+                            
+                            // 不设置宽高比，让VLC自动适应SurfaceView
+                            // 由于SurfaceView的比例已调整为和视频一致，VLC会自然充满SurfaceView
+                            vlcMediaPlayer.setAspectRatio(null);
+                            vlcMediaPlayer.setScale(0);
+                            
+                            android.util.Log.d("PlaybackActivity", String.format(
+                                "横屏视频 - CenterCrop模式: SurfaceView=%dx%d (Screen=%dx%d)",
+                                surfaceWidth, surfaceHeight, screenWidth, screenHeight));
                         } else {
-                            // 竖版视频：高度占满，宽度按比例
-                            targetAspectRatio = (int)(screenHeight * finalVideoRatio) + ":" + screenHeight;
+                            // 竖屏视频：等比占满纵轴 (FitCenter 模式)
+                            // SurfaceView保持全屏
+                            lp.width = screenWidth;
+                            lp.height = screenHeight;
+                            lp.gravity = android.view.Gravity.CENTER;
+                            surfaceView.setLayoutParams(lp);
+                            
+                            // 计算目标宽高比字符串，保持视频比例
+                            String targetAspectRatio;
+                            if (finalVideoRatio > screenRatio) {
+                                // 视频比屏幕宽（罕见情况）：宽度占满
+                                targetAspectRatio = screenWidth + ":" + (int)(screenWidth / finalVideoRatio);
+                            } else {
+                                // 视频比屏幕窄：高度占满
+                                targetAspectRatio = (int)(screenHeight * finalVideoRatio) + ":" + screenHeight;
+                            }
+                            
+                            vlcMediaPlayer.setAspectRatio(targetAspectRatio);
+                            vlcMediaPlayer.setScale(0);
+                            
+                            android.util.Log.d("PlaybackActivity", String.format(
+                                "竖屏视频 - FitCenter模式: AspectRatio=%s, SurfaceView=%dx%d",
+                                targetAspectRatio, screenWidth, screenHeight));
                         }
-                        
-                        // 设置VLC的宽高比
-                        vlcMediaPlayer.setAspectRatio(targetAspectRatio);
-                        // 设置缩放为0（自动）
-                        vlcMediaPlayer.setScale(0);
-                        
-                        android.util.Log.d("PlaybackActivity", String.format(
-                            "VLC设置: AspectRatio=%s, SurfaceView=%dx%d",
-                            targetAspectRatio, screenWidth, screenHeight));
                     });
                 }
             });
@@ -300,8 +405,7 @@ public class PlaybackActivity extends FragmentActivity {
                         break;
                     case MediaPlayer.Event.EncounteredError:
                         loadingIndicator.setVisibility(View.GONE);
-                        Toast.makeText(this, "播放错误，尝试下一个", Toast.LENGTH_SHORT).show();
-                        viewModel.playNext();
+                        handleVlcError();
                         break;
                 }
             });
@@ -314,83 +418,251 @@ public class PlaybackActivity extends FragmentActivity {
     }
 
     private void initExoPlayer() {
-        // 初始化ExoPlayer
-        exoPlayer = new ExoPlayer.Builder(this).build();
-        playerView.setPlayer(exoPlayer);
-        
-        // 监听播放器状态变化
-        exoPlayer.addListener(new Player.Listener() {
-            @Override
-            public void onPlaybackStateChanged(int playbackState) {
-                if (playbackState == Player.STATE_READY) {
-                    loadingIndicator.setVisibility(View.GONE);
-                    updateProgress();
-                } else if (playbackState == Player.STATE_BUFFERING) {
-                    loadingIndicator.setVisibility(View.VISIBLE);
-                } else if (playbackState == Player.STATE_ENDED) {
-                    viewModel.playNext();
-                }
+        if (exoPlayer == null) {
+            // 检测是否为模拟器（提前检测，用于后续配置）
+            boolean isEmulator = android.os.Build.FINGERPRINT.contains("generic") ||
+                                android.os.Build.FINGERPRINT.contains("vbox") ||
+                                android.os.Build.PRODUCT.contains("sdk") ||
+                                android.os.Build.MODEL.contains("Emulator");
+            
+            android.util.Log.d("PlaybackActivity", "设备类型: " + (isEmulator ? "模拟器" : "真机"));
+            
+            // 初始化ExoPlayer，配置更好的解码器和渲染策略
+            // 针对模拟器和真机使用不同的缓冲策略
+            com.google.android.exoplayer2.DefaultLoadControl loadControl;
+            
+            if (isEmulator) {
+                // 模拟器：极致激进的启动策略
+                loadControl = new com.google.android.exoplayer2.DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(
+                        5000,   // minBufferMs: 最小缓冲5秒
+                        15000,  // maxBufferMs: 最大缓冲15秒
+                        200,    // bufferForPlaybackMs: 仅缓冲0.2秒即开始播放
+                        800     // bufferForPlaybackAfterRebufferMs: 重新缓冲0.8秒
+                    )
+                    .setPrioritizeTimeOverSizeThresholds(true)
+                    .setBackBuffer(0, false) // 禁用后向缓冲
+                    .build();
+                android.util.Log.d("PlaybackActivity", "使用模拟器优化配置：超低延迟启动");
+            } else {
+                // 真机：平衡的策略
+                loadControl = new com.google.android.exoplayer2.DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(
+                        10000,  // minBufferMs: 最小缓冲10秒
+                        30000,  // maxBufferMs: 最大缓冲30秒
+                        500,    // bufferForPlaybackMs: 开始播放前缓冲0.5秒
+                        1500    // bufferForPlaybackAfterRebufferMs: 重新缓冲后需要1.5秒
+                    )
+                    .setPrioritizeTimeOverSizeThresholds(true)
+                    .build();
             }
             
-            @Override
-            public void onIsPlayingChanged(boolean isPlaying) {
-                updatePlayPauseButton(isPlaying);
-                if (isPlaying) {
-                    startProgressUpdate();
-                } else {
-                    stopProgressUpdate();
-                }
-            }
+            // 优化渲染器工厂：优先使用硬件解码器
+            // 渲染器工厂配置
+            com.google.android.exoplayer2.DefaultRenderersFactory renderersFactory =
+                new com.google.android.exoplayer2.DefaultRenderersFactory(this)
+                    // 使用ON模式，允许扩展解码器但不优先
+                    .setExtensionRendererMode(
+                        com.google.android.exoplayer2.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
+                    )
+                    .setEnableDecoderFallback(true)
+                    .setAllowedVideoJoiningTimeMs(2000); // 进一步减少视频连接时间
 
-            @Override
-            public void onPlayerError(@NonNull com.google.android.exoplayer2.PlaybackException error) {
-                loadingIndicator.setVisibility(View.GONE);
-                android.util.Log.e("PlaybackActivity", "播放错误", error);
-                
-                String errorMessage = "播放出错";
-                boolean shouldSkip = false;
-                
-                // 检查是否是解码器问题
-                if (error.getCause() instanceof com.google.android.exoplayer2.mediacodec.MediaCodecRenderer.DecoderInitializationException) {
-                    errorMessage = "无法解码此视频格式 (HEVC/Dolby Vision)，跳过到下一个";
-                    shouldSkip = true;
-                } else if (error.errorCode == com.google.android.exoplayer2.PlaybackException.ERROR_CODE_DECODER_INIT_FAILED) {
-                    errorMessage = "解码器初始化失败，跳过到下一个";
-                    shouldSkip = true;
-                }
-                
-                android.widget.Toast.makeText(PlaybackActivity.this, errorMessage, android.widget.Toast.LENGTH_SHORT).show();
-                
-                // 自动播放下一个
-                if (shouldSkip) {
-                    new Handler().postDelayed(() -> {
-                        List<FileInfo> files = viewModel.getPlayList().getValue();
-                        if (files != null && files.size() > 1) {
-                            viewModel.playNext();
-                        }
-                    }, 2000);
-                }
+            // 在真机上启用异步队列可以提高性能，但在模拟器上可能导致问题
+            if (!isEmulator) {
+                renderersFactory.forceEnableMediaCodecAsynchronousQueueing();
             }
-        });
+            
+            // 配置自定义 DataSource.Factory 以添加百度网盘所需的请求头
+            // 使用标准的User-Agent，模拟Android设备，避免被服务器识别为异常客户端
+            String userAgent = com.google.android.exoplayer2.util.Util.getUserAgent(this, "BaiduTVPlayer");
+            
+            com.google.android.exoplayer2.upstream.DefaultHttpDataSource.Factory httpDataSourceFactory =
+                new com.google.android.exoplayer2.upstream.DefaultHttpDataSource.Factory()
+                    .setUserAgent(userAgent)
+                    .setConnectTimeoutMs(15000) // 减少连接超时到15秒
+                    .setReadTimeoutMs(15000)    // 减少读取超时到15秒
+                    .setAllowCrossProtocolRedirects(true)
+                    .setKeepPostFor302Redirects(true);
+            
+            // 使用带带宽测量的DataSource，有助于ExoPlayer调整缓冲策略
+            com.google.android.exoplayer2.upstream.DefaultBandwidthMeter bandwidthMeter =
+                new com.google.android.exoplayer2.upstream.DefaultBandwidthMeter.Builder(this).build();
+                
+            com.google.android.exoplayer2.upstream.DefaultDataSource.Factory dataSourceFactory =
+                new com.google.android.exoplayer2.upstream.DefaultDataSource.Factory(this, httpDataSourceFactory)
+                    .setTransferListener(bandwidthMeter);
+            
+            exoPlayer = new ExoPlayer.Builder(this)
+                .setRenderersFactory(renderersFactory)
+                .setLoadControl(loadControl)
+                .setMediaSourceFactory(
+                    new com.google.android.exoplayer2.source.DefaultMediaSourceFactory(this)
+                        .setDataSourceFactory(dataSourceFactory)
+                )
+                .build();
+            
+            playerView.setPlayer(exoPlayer);
+            
+            // 设置视频缩放模式为自适应
+            playerView.setResizeMode(com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT);
+            
+            // 不保持内容在播放器重置时不变，确保切换视频时清除上一帧
+            playerView.setKeepContentOnPlayerReset(false);
+            
+            // 监听播放器状态变化
+            exoPlayer.addListener(new Player.Listener() {
+                @Override
+                public void onPlayerError(com.google.android.exoplayer2.PlaybackException error) {
+                    android.util.Log.e("PlaybackActivity", "ExoPlayer error: " + error.getMessage(), error);
+                    android.util.Log.e("PlaybackActivity", "Error type: " + error.errorCode);
+                    
+                    // 特别处理解码器错误
+                    if (error.errorCode == com.google.android.exoplayer2.PlaybackException.ERROR_CODE_DECODING_FAILED ||
+                        error.errorCode == com.google.android.exoplayer2.PlaybackException.ERROR_CODE_DECODER_INIT_FAILED) {
+                        android.util.Log.e("PlaybackActivity", "⚠️ 解码器错误，可能是不支持的视频格式，准备切换到VLC");
+                    }
+                    
+                    handleExoPlayerError();
+                }
+                
+                @Override
+                public void onVideoSizeChanged(com.google.android.exoplayer2.video.VideoSize videoSize) {
+                    int width = videoSize.width;
+                    int height = videoSize.height;
+                    android.util.Log.d("PlaybackActivity", "ExoPlayer 视频尺寸: " + width + "x" + height);
+                    
+                    // 根据视频是横屏还是竖屏设置不同的缩放模式
+                    if (width >= height) {
+                        // 横屏视频：使用 ZOOM 模式填满屏幕 (CenterCrop)
+                        playerView.setResizeMode(com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM);
+                        android.util.Log.d("PlaybackActivity", "横屏视频，使用 RESIZE_MODE_ZOOM (CenterCrop)");
+                    } else {
+                        // 竖屏视频：使用 FIT 模式保持比例 (FitCenter，高度占满)
+                        playerView.setResizeMode(com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT);
+                        android.util.Log.d("PlaybackActivity", "竖屏视频，使用 RESIZE_MODE_FIT (FitCenter)");
+                    }
+                }
+
+                @Override
+                public void onPlaybackStateChanged(int playbackState) {
+                    String stateName;
+                    switch (playbackState) {
+                        case Player.STATE_IDLE:
+                            stateName = "IDLE";
+                            break;
+                        case Player.STATE_BUFFERING:
+                            stateName = "BUFFERING";
+                            break;
+                        case Player.STATE_READY:
+                            stateName = "READY";
+                            break;
+                        case Player.STATE_ENDED:
+                            stateName = "ENDED";
+                            break;
+                        default:
+                            stateName = "UNKNOWN";
+                    }
+                    android.util.Log.d("PlaybackActivity", "ExoPlayer state changed: " + stateName);
+                    
+                    if (playbackState == Player.STATE_READY) {
+                        long readyTime = System.currentTimeMillis();
+                        android.util.Log.d("PlaybackActivity", "ExoPlayer is ready, hiding loading indicator");
+                        android.util.Log.d("PlaybackActivity", "从prepare到READY的总耗时: " +
+                            (readyTime - lastPrepareTime) + "ms");
+                        
+                        // 检查视频轨道信息
+                        if (exoPlayer != null) {
+                            com.google.android.exoplayer2.Tracks tracks = exoPlayer.getCurrentTracks();
+                            boolean hasVideo = false;
+                            boolean hasAudio = false;
+                            
+                            for (com.google.android.exoplayer2.Tracks.Group trackGroup : tracks.getGroups()) {
+                                if (trackGroup.getType() == com.google.android.exoplayer2.C.TRACK_TYPE_VIDEO && trackGroup.isSelected()) {
+                                    hasVideo = true;
+                                    android.util.Log.d("PlaybackActivity", "✓ 检测到视频轨道");
+                                }
+                                if (trackGroup.getType() == com.google.android.exoplayer2.C.TRACK_TYPE_AUDIO && trackGroup.isSelected()) {
+                                    hasAudio = true;
+                                    android.util.Log.d("PlaybackActivity", "✓ 检测到音频轨道");
+                                }
+                            }
+                            
+                            android.util.Log.d("PlaybackActivity", "视频轨道: " + hasVideo + ", 音频轨道: " + hasAudio);
+                            
+                            // 如果有音频但没有视频，可能是渲染问题
+                            if (hasAudio && !hasVideo) {
+                                android.util.Log.w("PlaybackActivity", "⚠️ 警告：检测到音频但没有视频轨道");
+                            }
+                        }
+                        
+                        loadingIndicator.setVisibility(View.GONE);
+                        updatePlayPauseButton(true);
+                        updateProgress();
+                        // ExoPlayer 成功播放，重置错误计数
+                        exoErrorCount = 0;
+                    } else if (playbackState == Player.STATE_BUFFERING) {
+                        android.util.Log.d("PlaybackActivity", "ExoPlayer is buffering, showing loading indicator");
+                        loadingIndicator.setVisibility(View.VISIBLE);
+                    } else if (playbackState == Player.STATE_ENDED) {
+                        android.util.Log.d("PlaybackActivity", "ExoPlayer playback ended, playing next");
+                        viewModel.playNext();
+                    }
+                }
+                
+                @Override
+                public void onRenderedFirstFrame() {
+                    android.util.Log.d("PlaybackActivity", "✓ ExoPlayer 渲染了第一帧视频");
+                }
+            });
+        }
+    }
+
+    /**
+     * 处理 ExoPlayer 播放错误，尝试切换到 VLC
+     */
+    private void handleExoPlayerError() {
+        exoErrorCount++;
+        loadingIndicator.setVisibility(View.GONE);
         
-        // 初始化图片播放Handler
-        imageHandler = new Handler();
-        controlsHandler = new Handler();
-        progressHandler = new Handler();
-        // 初始化地点显示Handler
-        locationHandler = new Handler();
-        locationRunnable = () -> {
-            // 淡出动画
-            tvLocation.animate()
-                    .alpha(0f)
-                    .setDuration(500)
-                    .withEndAction(() -> tvLocation.setVisibility(View.GONE))
-                    .start();
-        };
+        // 对于解码器错误，直接切换到 VLC，不重试
+        // 解码器错误通常意味着设备不支持该视频格式，重试没有意义
+        if (exoErrorCount > 1) {
+            // ExoPlayer 彻底失败，切换到 VLC
+            android.util.Log.d("PlaybackActivity", "ExoPlayer失败次数过多，切换到VLC");
+            Toast.makeText(this, "ExoPlayer播放失败，切换到VLC播放器", Toast.LENGTH_SHORT).show();
+            
+            // 释放 ExoPlayer
+            if (exoPlayer != null) {
+                exoPlayer.stop();
+            }
+            
+            // 切换到 VLC
+            useVlc = true;
+            exoErrorCount = 0;
+            updatePlayerIndicator();
+            
+            // 重新尝试播放
+            if (currentMediaUrl != null) {
+                playVideoWithUrl(currentMediaUrl);
+            } else {
+                viewModel.playNext();
+            }
+        } else {
+            // 只重试一次
+            android.util.Log.d("PlaybackActivity", "ExoPlayer错误，尝试重试 (1/1)");
+            if (exoPlayer != null) {
+                exoPlayer.prepare();
+                exoPlayer.play();
+            }
+        }
     }
 
     private void initViewModel() {
         viewModel = new ViewModelProvider(this).get(PlaybackViewModel.class);
+        
+        // 初始化播放器指示器（在 viewModel 创建后）
+        updatePlayerIndicator();
         
         // 观察播放列表
         viewModel.getPlayList().observe(this, files -> {
@@ -450,7 +722,7 @@ public class PlaybackActivity extends FragmentActivity {
                 }
             }
         });
-
+        
         // 观察准备好的媒体URL
         viewModel.getPreparedMediaUrl().observe(this, url -> {
             if (url != null) {
@@ -498,6 +770,21 @@ public class PlaybackActivity extends FragmentActivity {
                 // 可以显示错误提示
             }
         });
+        
+        // 初始化Handler
+        imageHandler = new Handler();
+        controlsHandler = new Handler();
+        progressHandler = new Handler();
+        
+        locationHandler = new Handler();
+        locationRunnable = () -> {
+            // 10秒后淡出地点信息
+            tvLocation.animate()
+                    .alpha(0f)
+                    .setDuration(1000)
+                    .withEndAction(() -> tvLocation.setVisibility(View.GONE))
+                    .start();
+        };
     }
 
     private void initData() {
@@ -664,6 +951,12 @@ public class PlaybackActivity extends FragmentActivity {
      * 播放当前文件
      */
     private void playCurrentFile() {
+        // 每次播放新文件时，重置为使用ExoPlayer（优先）
+        // 除非是因为ExoPlayer播放失败导致的重试（这种情况下由handleExoPlayerError处理，不会重新调playCurrentFile）
+        useVlc = false;
+        exoErrorCount = 0;
+        vlcErrorCount = 0;
+        
         FileInfo currentFile = viewModel.getCurrentFile();
         if (currentFile == null) {
             android.util.Log.e("PlaybackActivity", "playCurrentFile: currentFile is null");
@@ -707,6 +1000,7 @@ public class PlaybackActivity extends FragmentActivity {
         
         // 隐藏图片显示
         ivImageDisplay.setVisibility(View.GONE);
+        updatePlayerIndicator();
         
         if (useVlc) {
             // 使用 VLC 播放
@@ -726,10 +1020,10 @@ public class PlaybackActivity extends FragmentActivity {
                 }
                 
                 Media media = new Media(libVLC, Uri.parse(videoUrl));
-                // 禁用硬件解码以避免兼容性问题
-                media.setHWDecoderEnabled(false, false);
+                // 启用硬件解码以提高性能，同时保留软件解码作为备选
+                media.setHWDecoderEnabled(true, true);
                 // 添加媒体选项
-                media.addOption(":network-caching=2000");
+                media.addOption(":network-caching=1500"); // 减少网络缓存到1.5秒
                 
                 vlcMediaPlayer.setMedia(media);
                 
@@ -748,6 +1042,9 @@ public class PlaybackActivity extends FragmentActivity {
                         vlcMediaPlayer.play();
                         viewModel.setPlaying(true);
                         android.util.Log.d("PlaybackActivity", "VLC开始播放");
+
+                        // 启动进度更新
+                        startProgressUpdate();
                     }
                 }, 100);
             }
@@ -757,13 +1054,31 @@ public class PlaybackActivity extends FragmentActivity {
             playerView.setVisibility(View.VISIBLE);
             
             if (videoUrl != null && !videoUrl.isEmpty()) {
+                long startTime = System.currentTimeMillis();
+                android.util.Log.d("PlaybackActivity", "开始ExoPlayer准备: " + videoUrl);
+                
+                // 清除之前的媒体项，防止上一个视频的帧残留
+                exoPlayer.clearMediaItems();
+                
                 MediaItem mediaItem = MediaItem.fromUri(videoUrl);
                 exoPlayer.setMediaItem(mediaItem);
+                
+                // 记录prepare开始时间
+                lastPrepareTime = System.currentTimeMillis();
+                long prepareStartTime = lastPrepareTime;
                 exoPlayer.prepare();
+                android.util.Log.d("PlaybackActivity", "ExoPlayer.prepare() 调用完成，耗时: " +
+                    (System.currentTimeMillis() - prepareStartTime) + "ms");
                 
                 // 设置播放状态为true，确保自动播放
                 viewModel.setPlaying(true);
                 exoPlayer.setPlayWhenReady(true);
+                
+                android.util.Log.d("PlaybackActivity", "ExoPlayer准备完成，总耗时: " +
+                    (System.currentTimeMillis() - startTime) + "ms");
+                
+                // 启动进度更新
+                startProgressUpdate();
             }
         }
     }
@@ -778,6 +1093,7 @@ public class PlaybackActivity extends FragmentActivity {
         surfaceView.setVisibility(View.GONE);
         playerView.setVisibility(View.GONE);
         ivImageDisplay.setVisibility(View.VISIBLE);
+        updatePlayerIndicator();
         
         // 加载图片
         if (imageUrl != null && !imageUrl.isEmpty()) {
@@ -793,14 +1109,17 @@ public class PlaybackActivity extends FragmentActivity {
             android.util.Log.d("PlaybackActivity", "图片特效: " + effect.getName() +
                 (effect == ImageEffect.RANDOM ? " -> 实际特效: " + actualEffect.getName() : ""));
 
-            // 重置ImageView的变换状态
-            ivImageDisplay.setScaleX(1.0f);
-            ivImageDisplay.setScaleY(1.0f);
-            ivImageDisplay.setTranslationX(0);
-            ivImageDisplay.setTranslationY(0);
-            ivImageDisplay.setAlpha(1.0f);
+            // 取消当前正在进行的动画，避免与新动画冲突
+            ivImageDisplay.animate().cancel();
             
-            DrawableTransitionOptions transitionOptions = DrawableTransitionOptions.withCrossFade(1000);
+            // 对于FADE效果使用Glide的CrossFade，其他效果不使用CrossFade避免冲突
+            DrawableTransitionOptions transitionOptions;
+            if (actualEffect == ImageEffect.FADE) {
+                transitionOptions = DrawableTransitionOptions.withCrossFade(800);
+            } else {
+                // 其他效果使用更快的CrossFade或不使用
+                transitionOptions = DrawableTransitionOptions.withCrossFade(300);
+            }
             
             Glide.with(this)
                     .load(imageUrl)
@@ -814,10 +1133,10 @@ public class PlaybackActivity extends FragmentActivity {
                         @Override
                         public boolean onResourceReady(android.graphics.drawable.Drawable resource, Object model, Target<android.graphics.drawable.Drawable> target, com.bumptech.glide.load.DataSource dataSource, boolean isFirstResource) {
                             // 图片加载完成后应用动画
-                            // 使用Handler延迟一小段时间，确保图片已经完全显示
+                            // 对于非FADE效果，需要先设置初始状态再开始动画
                             new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                                 applyImageEffect(actualEffect);
-                            }, 100);
+                            }, actualEffect == ImageEffect.FADE ? 0 : 150);
                             return false;
                         }
                     })
@@ -835,6 +1154,14 @@ public class PlaybackActivity extends FragmentActivity {
         // 确保视图可见
         ivImageDisplay.setVisibility(View.VISIBLE);
         
+        // 先重置到中性状态，避免残留的变换影响新动画
+        ivImageDisplay.setScaleX(1.0f);
+        ivImageDisplay.setScaleY(1.0f);
+        ivImageDisplay.setTranslationX(0);
+        ivImageDisplay.setTranslationY(0);
+        ivImageDisplay.setRotation(0);
+        ivImageDisplay.setAlpha(1.0f);
+        
         switch (effect) {
             case FLOAT:
                 // 浮动效果：缓慢放大
@@ -847,23 +1174,23 @@ public class PlaybackActivity extends FragmentActivity {
                 break;
                 
             case BOUNCE:
-                // 跳动效果
+                // 跳动效果：先缩小再弹回
                 ivImageDisplay.setScaleX(0.8f);
                 ivImageDisplay.setScaleY(0.8f);
                 ivImageDisplay.animate()
                         .scaleX(1.0f)
                         .scaleY(1.0f)
-                        .setDuration(1000)
+                        .setDuration(800)
                         .setInterpolator(new android.view.animation.BounceInterpolator())
                         .start();
                 break;
                 
             case EASE:
-                // 缓动效果：从一侧滑入
-                ivImageDisplay.setTranslationX(100f);
+                // 缓动效果：从右侧滑入
+                ivImageDisplay.setTranslationX(80f);
                 ivImageDisplay.animate()
                         .translationX(0f)
-                        .setDuration(1000)
+                        .setDuration(800)
                         .setInterpolator(new android.view.animation.DecelerateInterpolator())
                         .start();
                 break;
@@ -876,49 +1203,43 @@ public class PlaybackActivity extends FragmentActivity {
                 
             case ZOOM:
                 // 放大效果：从中心放大
-                ivImageDisplay.setScaleX(0.5f);
-                ivImageDisplay.setScaleY(0.5f);
-                ivImageDisplay.setAlpha(0f);
+                ivImageDisplay.setScaleX(0.7f);
+                ivImageDisplay.setScaleY(0.7f);
                 ivImageDisplay.animate()
                         .scaleX(1.0f)
                         .scaleY(1.0f)
-                        .alpha(1.0f)
-                        .setDuration(1000)
+                        .setDuration(800)
                         .setInterpolator(new android.view.animation.DecelerateInterpolator())
                         .start();
                 break;
                 
             case ROTATE:
                 // 旋转效果：从旋转状态恢复
-                ivImageDisplay.setRotation(360f);
-                ivImageDisplay.setAlpha(0f);
+                ivImageDisplay.setRotation(180f);
                 ivImageDisplay.animate()
                         .rotation(0f)
-                        .alpha(1.0f)
-                        .setDuration(1000)
+                        .setDuration(800)
                         .setInterpolator(new android.view.animation.DecelerateInterpolator())
                         .start();
                 break;
                 
             case SLIDE:
-                // 两侧划入效果：从两侧向中间
-                // 先设置透明度为0，然后淡入
-                ivImageDisplay.setAlpha(0f);
-                ivImageDisplay.setTranslationX(0f);
-                ivImageDisplay.setScaleX(0.8f);
-                ivImageDisplay.setScaleY(0.8f);
+                // 滑入效果：从左侧滑入并放大
+                ivImageDisplay.setTranslationX(-100f);
+                ivImageDisplay.setScaleX(0.9f);
+                ivImageDisplay.setScaleY(0.9f);
                 ivImageDisplay.animate()
-                        .alpha(1.0f)
+                        .translationX(0f)
                         .scaleX(1.0f)
                         .scaleY(1.0f)
-                        .setDuration(1000)
+                        .setDuration(800)
                         .setInterpolator(new android.view.animation.DecelerateInterpolator())
                         .start();
                 break;
                 
             case FADE:
             default:
-                // 默认淡入淡出由Glide处理
+                // FADE效果完全由Glide的CrossFade处理，不需要额外动画
                 break;
         }
     }
@@ -958,6 +1279,14 @@ public class PlaybackActivity extends FragmentActivity {
         // 停止ExoPlayer
         if (exoPlayer != null) {
             exoPlayer.stop();
+            exoPlayer.clearMediaItems(); // 确保完全清除
+        }
+        
+        // 确保PlayerView不显示旧内容
+        if (playerView != null) {
+            // 这会触发快门显示，遮挡旧视频帧
+            playerView.setPlayer(null);
+            playerView.setPlayer(exoPlayer);
         }
         
         // 停止图片定时器
@@ -1105,6 +1434,21 @@ public class PlaybackActivity extends FragmentActivity {
         }
     }
     
+    private void updatePlayerIndicator() {
+        if (tvPlayerIndicator == null) return;
+        
+        // 始终隐藏 UI 指示器，只在日志中记录当前使用的播放器
+        tvPlayerIndicator.setVisibility(View.GONE);
+        
+        // 如果 viewModel 还未初始化，直接返回
+        if (viewModel == null) return;
+        
+        if (!isCurrentFileVideo()) return;
+        
+        String playerName = useVlc ? "VLC Player" : "ExoPlayer";
+        android.util.Log.d("PlaybackActivity", "当前使用的播放器: " + playerName);
+    }
+
     private boolean isCurrentFileVideo() {
         FileInfo currentFile = viewModel.getCurrentFile();
         return currentFile != null && currentFile.isVideo();
@@ -1134,10 +1478,19 @@ public class PlaybackActivity extends FragmentActivity {
         
         // 使用独立进程的服务获取地点信息（避免GPS提取崩溃影响主进程）
         android.util.Log.d("PlaybackActivity", "开始获取地点信息（使用独立进程服务）: " + mediaUrl);
+        // 记录请求时的文件ID，用于验证结果是否匹配当前文件
+        final long requestFsId = file.getFsId();
         
         android.os.ResultReceiver receiver = new android.os.ResultReceiver(new android.os.Handler(android.os.Looper.getMainLooper())) {
             @Override
             protected void onReceiveResult(int resultCode, android.os.Bundle resultData) {
+                // 检查当前文件是否仍然是请求时的文件
+                FileInfo currentFile = viewModel.getCurrentFile();
+                if (currentFile == null || currentFile.getFsId() != requestFsId) {
+                    android.util.Log.d("PlaybackActivity", "忽略过期的地点信息回调 (文件已切换)");
+                    return;
+                }
+                
                 if (resultCode == com.baidu.tv.player.service.LocationExtractionService.RESULT_CODE_SUCCESS) {
                     String location = resultData.getString(com.baidu.tv.player.service.LocationExtractionService.RESULT_LOCATION);
                     android.util.Log.d("PlaybackActivity", "地点信息获取成功: " + location);
@@ -1157,28 +1510,193 @@ public class PlaybackActivity extends FragmentActivity {
         com.baidu.tv.player.service.LocationExtractionService.startExtraction(this, mediaUrl, isVideo, receiver);
     }
     
+    /**
+     * 处理VLC播放错误，实现智能降级策略
+     * 针对H.265/HEVC（特别是苹果设备拍摄）和高帧率视频的兼容性问题
+     */
+    private void handleVlcError() {
+        vlcErrorCount++;
+        android.util.Log.w("PlaybackActivity", "VLC播放错误 (错误次数: " + vlcErrorCount + "/" + MAX_VLC_RETRIES + ")");
+        
+        FileInfo currentFile = viewModel.getCurrentFile();
+        if (currentFile == null) {
+            Toast.makeText(this, "播放错误", Toast.LENGTH_SHORT).show();
+            viewModel.playNext();
+            return;
+        }
+        
+        String fileName = currentFile.getServerFilename();
+        boolean isHevc = fileName.toLowerCase().contains("hevc") ||
+                        fileName.toLowerCase().contains("h265") ||
+                        fileName.toLowerCase().contains("h.265");
+        
+        if (vlcErrorCount >= MAX_VLC_RETRIES) {
+            // 达到最大重试次数，切换到ExoPlayer或跳过
+            if (!useVlc) {
+                // 已经在使用ExoPlayer，跳过此文件
+                Toast.makeText(this,
+                    "无法播放此文件 (" + (isHevc ? "H.265编码可能不受支持" : "格式不兼容") + ")，跳过",
+                    Toast.LENGTH_LONG).show();
+                vlcErrorCount = 0; // 重置计数器
+                viewModel.playNext();
+            } else {
+                // 尝试切换到ExoPlayer
+                Toast.makeText(this,
+                    "VLC播放失败，尝试使用ExoPlayer" + (isHevc ? " (H.265)" : ""),
+                    Toast.LENGTH_SHORT).show();
+                vlcErrorCount = 0; // 重置计数器
+                useVlc = false;
+                updatePlayerIndicator();
+                
+                // 重新播放当前文件
+                if (currentMediaUrl != null) {
+                    playVideoWithUrl(currentMediaUrl);
+                } else {
+                    viewModel.playNext();
+                }
+            }
+        } else {
+            // 还未达到最大重试次数，尝试软解码
+            Toast.makeText(this,
+                "播放错误，尝试软解码" + (isHevc ? " (H.265视频)" : ""),
+                Toast.LENGTH_SHORT).show();
+            
+            // 重新初始化VLC，使用软解码
+            try {
+                if (vlcMediaPlayer != null) {
+                    vlcMediaPlayer.stop();
+                    vlcMediaPlayer.release();
+                }
+                if (libVLC != null) {
+                    libVLC.release();
+                }
+                
+                // 使用软解码选项重新初始化
+                ArrayList<String> options = new ArrayList<>();
+                options.add("-vvv");
+                options.add("--avcodec-hw=none"); // 强制软解码
+                options.add("--network-caching=2000");
+                
+                libVLC = new LibVLC(this, options);
+                vlcMediaPlayer = new MediaPlayer(libVLC);
+                
+                IVLCVout vout = vlcMediaPlayer.getVLCVout();
+                vout.setVideoView(surfaceView);
+                vout.attachViews();
+                
+                // 重新设置事件监听
+                vlcMediaPlayer.setEventListener(event -> {
+                    switch (event.type) {
+                        case MediaPlayer.Event.Playing:
+                            loadingIndicator.setVisibility(View.GONE);
+                            updatePlayPauseButton(true);
+                            startProgressUpdate();
+                            break;
+                        case MediaPlayer.Event.EncounteredError:
+                            loadingIndicator.setVisibility(View.GONE);
+                            handleVlcError();
+                            break;
+                    }
+                });
+                
+                // 重新播放
+                if (currentMediaUrl != null) {
+                    playVideoWithUrl(currentMediaUrl);
+                }
+            } catch (Exception e) {
+                android.util.Log.e("PlaybackActivity", "重新初始化VLC失败", e);
+                Toast.makeText(this, "播放器初始化失败，跳过此文件", Toast.LENGTH_SHORT).show();
+                vlcErrorCount = 0;
+                viewModel.playNext();
+            }
+        }
+    }
+    
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        switch (keyCode) {
-            case KeyEvent.KEYCODE_DPAD_CENTER:
-            case KeyEvent.KEYCODE_ENTER:
-                if (layoutControls.getVisibility() == View.VISIBLE) {
+        // 如果控制栏显示，处理方向键导航和确认键
+        if (layoutControls.getVisibility() == View.VISIBLE) {
+            switch (keyCode) {
+                case KeyEvent.KEYCODE_DPAD_CENTER:
+                case KeyEvent.KEYCODE_ENTER:
+                    // 如果有焦点的控件，触发点击
+                    View focusedView = getCurrentFocus();
+                    if (focusedView != null) {
+                        focusedView.performClick();
+                        return true;
+                    }
+                    // 否则隐藏控制栏
                     hideControls();
-                } else {
+                    return true;
+                    
+                case KeyEvent.KEYCODE_DPAD_UP:
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    // 重置隐藏计时器
                     showControls();
-                }
-                return true;
-                
+                    // 让系统处理焦点导航
+                    return super.onKeyDown(keyCode, event);
+                    
+                case KeyEvent.KEYCODE_BACK:
+                    hideControls();
+                    return true;
+            }
+        } else {
+            // 控制栏隐藏时的快捷键处理
+            switch (keyCode) {
+                case KeyEvent.KEYCODE_DPAD_CENTER:
+                case KeyEvent.KEYCODE_ENTER:
+                case KeyEvent.KEYCODE_DPAD_UP:
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                    // 显示控制栏并让播放/暂停按钮获取焦点
+                    showControls();
+                    ivPlayPause.requestFocus();
+                    return true;
+                    
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                    // 快退 10秒 或 上一张图片
+                    if (isCurrentFileVideo()) {
+                        seekBy(-10000);
+                        showControls();
+                    } else {
+                        viewModel.playPrevious();
+                    }
+                    return true;
+                    
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    // 快进 10秒 或 下一张图片
+                    if (isCurrentFileVideo()) {
+                        seekBy(10000);
+                        showControls();
+                    } else {
+                        viewModel.playNext();
+                    }
+                    return true;
+            }
+        }
+        
+        // 全局快捷键
+        switch (keyCode) {
             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
                 viewModel.togglePlayPause();
+                showControls();
                 return true;
                 
             case KeyEvent.KEYCODE_MEDIA_NEXT:
                 viewModel.playNext();
+                showControls();
                 return true;
                 
             case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
                 viewModel.playPrevious();
+                showControls();
+                return true;
+                
+            case KeyEvent.KEYCODE_MENU:
+            case KeyEvent.KEYCODE_M:
+                Intent intent = new Intent(this, com.baidu.tv.player.ui.settings.SettingsActivity.class);
+                startActivity(intent);
                 return true;
                 
             case KeyEvent.KEYCODE_BACK:
@@ -1188,43 +1706,47 @@ public class PlaybackActivity extends FragmentActivity {
                 }
                 break;
         }
-        
-        if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_M) {
-            Intent intent = new Intent(this, com.baidu.tv.player.ui.settings.SettingsActivity.class);
-            startActivity(intent);
-            return true;
-        }
 
         return super.onKeyDown(keyCode, event);
     }
     
-    @Override
-    protected void onResume() {
-        super.onResume();
+    /**
+     * 快进/快退
+     * @param offsetMs 偏移量（毫秒）
+     */
+    private void seekBy(long offsetMs) {
+        long currentTime = 0;
+        long totalTime = 0;
         
-        // 从SharedPreferences中读取播放模式并更新ViewModel
-        int savedPlayMode = com.baidu.tv.player.utils.PreferenceUtils.getPlayMode(this);
-        PlayMode newPlayMode = PlayMode.fromValue(savedPlayMode);
-        viewModel.setPlayMode(newPlayMode);
-        
-        // 从SharedPreferences中读取图片特效并更新ViewModel
-        int savedImageEffect = com.baidu.tv.player.utils.PreferenceUtils.getImageEffect(this);
-        ImageEffect newImageEffect = ImageEffect.fromValue(savedImageEffect);
-        viewModel.setImageEffect(newImageEffect);
-        
-        // 从SharedPreferences中读取图片显示时长并更新ViewModel
-        int savedDisplayDuration = com.baidu.tv.player.utils.PreferenceUtils.getImageDisplayDuration(this);
-        viewModel.setImageDisplayDuration(savedDisplayDuration);
-        
-        Boolean isPlaying = viewModel.getIsPlaying().getValue();
-        if (isPlaying != null && isPlaying) {
-            if (useVlc && vlcMediaPlayer != null && !vlcMediaPlayer.isPlaying()) {
-                vlcMediaPlayer.play();
-            } else if (exoPlayer != null) {
-                exoPlayer.setPlayWhenReady(true);
+        if (useVlc && vlcMediaPlayer != null) {
+            currentTime = vlcMediaPlayer.getTime();
+            totalTime = vlcMediaPlayer.getLength();
+            
+            long newTime = Math.max(0, Math.min(totalTime, currentTime + offsetMs));
+            vlcMediaPlayer.setTime(newTime);
+            
+            // 更新UI
+            tvCurrentTime.setText(DateUtils.formatElapsedTime(newTime / 1000));
+            seekbarProgress.setProgress((int) newTime);
+            
+        } else if (exoPlayer != null) {
+            currentTime = exoPlayer.getCurrentPosition();totalTime = exoPlayer.getDuration();
+            
+            if (totalTime != com.google.android.exoplayer2.C.TIME_UNSET) {
+                long newTime = Math.max(0, Math.min(totalTime, currentTime + offsetMs));
+                exoPlayer.seekTo(newTime);
+                
+                // 更新UI
+                tvCurrentTime.setText(DateUtils.formatElapsedTime(newTime / 1000));
+                seekbarProgress.setProgress((int) newTime);
             }
         }
+        
+        // 显示快进/快退提示
+        String text = offsetMs > 0 ? "+" + (offsetMs/1000) + "s" : (offsetMs/1000) + "s";
+        Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
     }
+    
     
     @Override
     protected void onPause() {

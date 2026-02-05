@@ -34,9 +34,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="24dp"
+                android:addStatesFromChildren="true"
                 android:background="@drawable/selector_item_background"
-                android:clickable="true"
-                android:focusable="true"
                 android:orientation="vertical"
                 android:padding="16dp">
 
@@ -60,7 +59,9 @@
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="16dp"
                         android:text="淡入淡出"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
 
                     <RadioButton
                         android:id="@+id/rb_effect_ease"
@@ -68,7 +69,9 @@
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="16dp"
                         android:text="缓动"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
 
                     <RadioButton
                         android:id="@+id/rb_effect_float"
@@ -76,14 +79,18 @@
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="16dp"
                         android:text="浮现"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
 
                     <RadioButton
                         android:id="@+id/rb_effect_bounce"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="跳动"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
                 </RadioGroup>
 
                 <RadioGroup
@@ -99,7 +106,9 @@
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="16dp"
                         android:text="百叶窗"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
 
                     <RadioButton
                         android:id="@+id/rb_effect_zoom"
@@ -107,7 +116,9 @@
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="16dp"
                         android:text="放大"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
 
                     <RadioButton
                         android:id="@+id/rb_effect_rotate"
@@ -115,7 +126,9 @@
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="16dp"
                         android:text="旋转"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
 
                     <RadioButton
                         android:id="@+id/rb_effect_slide"
@@ -123,14 +136,18 @@
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="16dp"
                         android:text="两侧划入"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
 
                     <RadioButton
                         android:id="@+id/rb_effect_random"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="随机"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
                 </RadioGroup>
             </LinearLayout>
 
@@ -139,9 +156,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="24dp"
+                android:addStatesFromChildren="true"
                 android:background="@drawable/selector_item_background"
-                android:clickable="true"
-                android:focusable="true"
                 android:orientation="vertical"
                 android:padding="16dp">
 
@@ -158,7 +174,9 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="16dp"
                     android:max="30"
-                    android:min="3" />
+                    android:min="3"
+                    android:focusable="true"
+                    android:stateListAnimator="@animator/focus_scale" />
 
                 <TextView
                     android:id="@+id/tv_display_duration"
@@ -174,9 +192,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="24dp"
+                android:addStatesFromChildren="true"
                 android:background="@drawable/selector_item_background"
-                android:clickable="true"
-                android:focusable="true"
                 android:orientation="vertical"
                 android:padding="16dp">
 
@@ -200,7 +217,9 @@
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="16dp"
                         android:text="顺序播放"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
 
                     <RadioButton
                         android:id="@+id/rb_mode_reverse"
@@ -208,7 +227,9 @@
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="16dp"
                         android:text="倒序播放"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
 
                     <RadioButton
                         android:id="@+id/rb_mode_random"
@@ -216,14 +237,18 @@
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="16dp"
                         android:text="随机播放"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
 
                     <RadioButton
                         android:id="@+id/rb_mode_single"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="单曲循环"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="@color/text_secondary"
+                        android:focusable="true"
+                        android:stateListAnimator="@animator/focus_scale" />
                 </RadioGroup>
             </LinearLayout>
 
@@ -232,9 +257,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="24dp"
+                android:addStatesFromChildren="true"
                 android:background="@drawable/selector_item_background"
-                android:clickable="true"
-                android:focusable="true"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
                 android:padding="16dp">
@@ -250,7 +274,9 @@
                 <Switch
                     android:id="@+id/switch_show_location"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
+                    android:layout_height="wrap_content"
+                    android:focusable="true"
+                    android:stateListAnimator="@animator/focus_scale" />
             </LinearLayout>
 
             <!-- 退出登录 -->
@@ -260,9 +286,11 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="24dp"
                 android:backgroundTint="#FF4444"
+                android:focusable="true"
                 android:text="退出登录"
                 android:textColor="@android:color/white"
-                android:textSize="18sp" />
+                android:textSize="18sp"
+                android:stateListAnimator="@animator/focus_scale" />
 
         </LinearLayout>
     </ScrollView>

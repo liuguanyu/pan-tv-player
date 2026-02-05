@@ -129,24 +129,40 @@ public class BlindsImageView extends AppCompatImageView {
             return new Rect(0, 0, viewWidth, viewHeight);
         }
         
-        // 计算缩放比例，保持图片比例并完整显示
+        // 计算缩放比例
         float scale;
         float dx = 0, dy = 0;
         
-        if (drawableWidth * viewHeight > viewWidth * drawableHeight) {
-            // 图片宽高比大于视图宽高比，以宽度为准
-            scale = (float) viewWidth / (float) drawableWidth;
-            dy = (viewHeight - drawableHeight * scale) * 0.5f;
+        // 判断图片是横屏还是竖屏
+        boolean isLandscape = drawableWidth >= drawableHeight;
+        
+        if (isLandscape) {
+            // 横屏图片：尽量充满全屏 (CenterCrop 模式)
+            // 取宽和高中缩放比例较大的那个，保证填满屏幕
+            float scaleX = (float) viewWidth / (float) drawableWidth;
+            float scaleY = (float) viewHeight / (float) drawableHeight;
+            scale = Math.max(scaleX, scaleY);
         } else {
-            // 以高度为准
-            scale = (float) viewHeight / (float) drawableHeight;
-            dx = (viewWidth - drawableWidth * scale) * 0.5f;
+            // 竖屏图片：等比占满纵轴 (FitCenter 模式)
+            // 保持原有逻辑，确保完整显示
+            if (drawableWidth * viewHeight > viewWidth * drawableHeight) {
+                scale = (float) viewWidth / (float) drawableWidth;
+            } else {
+                scale = (float) viewHeight / (float) drawableHeight;
+            }
         }
+        
+        // 计算居中位置
+        float scaledWidth = drawableWidth * scale;
+        float scaledHeight = drawableHeight * scale;
+        
+        dx = (viewWidth - scaledWidth) * 0.5f;
+        dy = (viewHeight - scaledHeight) * 0.5f;
         
         int left = Math.round(dx);
         int top = Math.round(dy);
-        int right = Math.round(viewWidth - dx);
-        int bottom = Math.round(viewHeight - dy);
+        int right = Math.round(dx + scaledWidth);
+        int bottom = Math.round(dy + scaledHeight);
         
         return new Rect(left, top, right, bottom);
     }

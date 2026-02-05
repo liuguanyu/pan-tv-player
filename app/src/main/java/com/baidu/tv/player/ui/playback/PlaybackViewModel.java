@@ -78,10 +78,32 @@ public class PlaybackViewModel extends AndroidViewModel {
         // 从设置中读取是否显示地点
         showLocation = new MutableLiveData<>(
                 PreferenceUtils.getShowLocation(application));
-                
+        
+        // 初始化 preparedMediaUrl
         preparedMediaUrl = new MutableLiveData<>();
+        
+        // 初始化 FileRepository
         fileRepository = FileRepository.getInstance();
+        
+        // 初始化 PlaylistRepository
         playlistRepository = new PlaylistRepository(application);
+    }
+    
+    /**
+     * 重新加载用户设置（从设置页返回时调用）
+     */
+    public void reloadSettings() {
+        imageEffect.setValue(ImageEffect.fromValue(
+                PreferenceUtils.getImageEffect(getApplication())));
+        imageDisplayDuration.setValue(
+                PreferenceUtils.getImageDisplayDuration(getApplication()));
+        imageTransitionDuration.setValue(
+                PreferenceUtils.getImageTransitionDuration(getApplication()));
+        showLocation.setValue(
+                PreferenceUtils.getShowLocation(getApplication()));
+        playMode.setValue(PlayMode.fromValue(
+                PreferenceUtils.getPlayMode(getApplication())));
+        Log.d("PlaybackViewModel", "设置已重新加载: 显示时长=" + imageDisplayDuration.getValue() + "ms");
     }
 
     public LiveData<List<FileInfo>> getPlayList() {

@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="280dp"
     android:layout_height="wrap_content"
     android:layout_marginEnd="20dp"
+    android:layout_marginVertical="5dp"
     android:focusable="true"
     android:clickable="true"
-    android:background="@drawable/selector_item_background">
+    android:foreground="@drawable/card_selector"
+    android:stateListAnimator="@animator/focus_zoom"
+    app:cardCornerRadius="8dp"
+    app:cardElevation="4dp"
+    app:cardBackgroundColor="@color/card_background">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -21,7 +26,8 @@
             android:layout_height="160dp"
             android:scaleType="centerCrop"
             android:background="@color/black"
-            android:contentDescription="播放列表封面" />
+            android:contentDescription="播放列表封面"
+            android:focusable="false" />
 
         <!-- 播放列表名称 -->
         <TextView
@@ -35,7 +41,8 @@
             android:textStyle="bold"
             android:maxLines="2"
             android:ellipsize="end"
-            android:gravity="start" />
+            android:gravity="start"
+            android:focusable="false" />
 
         <!-- 统计信息 -->
         <TextView
@@ -47,7 +54,8 @@
             android:textColor="#AAAAAA"
             android:maxLines="1"
             android:ellipsize="end"
-            android:gravity="start|center_vertical" />
+            android:gravity="start|center_vertical"
+            android:focusable="false" />
     </LinearLayout>
 
     <!-- 删除按钮（覆盖在右上角） -->
@@ -80,4 +88,4 @@
         android:focusable="true"
         android:contentDescription="刷新播放列表" />
 
-</FrameLayout>
+</androidx.cardview.widget.CardView>

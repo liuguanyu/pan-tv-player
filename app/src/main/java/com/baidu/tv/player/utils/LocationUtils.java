@@ -31,15 +31,27 @@ public class LocationUtils {
     // 统一的GPS调试日志前缀，方便过滤
     private static final String GPS_DEBUG = "GPS_DEBUG:";
     
-    // 位置缓存，避免重复请求
-    private static final ConcurrentHashMap<String, String> locationCache = new ConcurrentHashMap<>();
+    // ==================== 缓存配置 ====================
+    // L1: 内存缓存（快速访问）
+    private static final ConcurrentHashMap<String, String> memoryCache = new ConcurrentHashMap<>();
+    private static final int MAX_MEMORY_CACHE_SIZE = 1000; // 最多缓存1000个位置
     
-    // Nominatim API 基础URL
+    // L2: 本地持久化缓存（SharedPreferences）
+    private static final String PREFS_NAME = "location_cache";
+    private static final String CACHE_KEY_PREFIX = "loc_";
+    private static final int MAX_DISK_CACHE_SIZE = 5000; // 最多缓存5000个位置
+    private static final long CACHE_EXPIRY_DAYS = 30; // 缓存30天后过期
+    
+    // Nominatim API 基础URL（完全免费，不需要API Key）
     private static final String NOMINATIM_API_URL = "https://nominatim.openstreetmap.org/reverse";
     
-    // 请求超时时间（毫秒）
-    private static final int CONNECTION_TIMEOUT = 10000;
-    private static final int READ_TIMEOUT = 10000;
+    // 高德地图API配置（如果未配置则跳过）
+    private static final String AMAP_API_KEY = "b6c83f1c74ed02e0658941177efffed7"; // 已配置高德地图API Key
+    private static final String AMAP_API_URL = "https://restapi.amap.com/v3/geocode/regeo";
+    
+    // 请求超时时间（毫秒）- 缩短超时时间提高响应速度
+    private static final int CONNECTION_TIMEOUT = 3000;  // 3秒连接超时
+    private static final int READ_TIMEOUT = 5000;        // 5秒读取超时
     
     // 启用测试模式（用于调试）
     private static final boolean ENABLE_TEST_MODE = false;
@@ -53,13 +65,19 @@ public class LocationUtils {
     
     /**
      * 从图片中获取地点信息
+     * 使用临时文件方式读取EXIF，避免直接从网络流读取的兼容性问题
      */
     public static String getLocationFromImage(Context context, String imageUrl) {
+        File tempFile = null;
+        InputStream inputStream = null;
+        HttpURLConnection connection = null;
+        
         try {
             Log.d(TAG, "开始从图片获取地点: " + imageUrl);
-            // 从URL下载图片并读取EXIF信息
+            
+            // 从URL下载图片到临时文件
             URL url = new URL(imageUrl);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection = (HttpURLConnection) url.openConnection();
             connection.setDoInput(true);
             // 设置百度网盘需要的User-Agent
             connection.setRequestProperty("User-Agent", "pan.baidu.com");
@@ -71,8 +89,33 @@ public class LocationUtils {
             Log.d(TAG, "图片请求响应码: " + responseCode);
             
             if (responseCode == HttpURLConnection.HTTP_OK) {
-                InputStream inputStream = connection.getInputStream();
-                ExifInterface exif = new ExifInterface(inputStream);
+                inputStream = connection.getInputStream();
+                
+                // 创建临时文件
+                tempFile = File.createTempFile("location_exif_", ".tmp", context.getCacheDir());
+                java.io.FileOutputStream outputStream = new java.io.FileOutputStream(tempFile);
+                
+                // 下载图片到临时文件
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                long totalBytes = 0;
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, bytesRead);
+                    totalBytes += bytesRead;
+                    
+                    // 限制文件大小，避免下载过大的文件
+                    if (totalBytes > 10 * 1024 * 1024) { // 10MB
+                        Log.w(TAG, "图片文件过大，停止下载: " + totalBytes + " bytes");
+                        break;
+                    }
+                }
+                outputStream.flush();
+                outputStream.close();
+                
+                Log.d(TAG, "图片下载完成，大小: " + totalBytes + " bytes");
+                
+                // 从临时文件读取EXIF信息
+                ExifInterface exif = new ExifInterface(tempFile.getAbsolutePath());
                 
                 // 获取GPS坐标
                 float[] latLong = new float[2];
@@ -82,17 +125,35 @@ public class LocationUtils {
                 if (hasLatLong) {
                     double latitude = latLong[0];
                     double longitude = latLong[1];
-                    
-                    inputStream.close();
-                    connection.disconnect();
                     return getLocationFromCoordinates(context, latitude, longitude);
                 }
-                
-                inputStream.close();
             }
-            connection.disconnect();
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // 捕获所有异常，包括 RuntimeException 和 Error
             android.util.Log.e("LocationUtils", "获取图片地点失败: " + e.getMessage(), e);
+        } finally {
+            // 清理资源
+            try {
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            } catch (IOException e) {
+                // ignore
+            }
+            
+            try {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+            } catch (Exception e) {
+                // ignore
+            }
+            
+            // 删除临时文件
+            if (tempFile != null && tempFile.exists()) {
+                boolean deleted = tempFile.delete();
+                Log.d(TAG, "临时文件删除" + (deleted ? "成功" : "失败"));
+            }
         }
         
         return null;
@@ -254,127 +315,198 @@ public class LocationUtils {
      * 根据经纬度获取地点名称
      */
     public static String getLocationFromCoordinates(Context context, double latitude, double longitude) {
-        // 检查缓存
+        // 生成缓存Key（保留4位小数，约11米精度）
         String cacheKey = String.format(Locale.US, "%.4f,%.4f", latitude, longitude);
-        if (locationCache.containsKey(cacheKey)) {
-            return locationCache.get(cacheKey);
+        
+        // L1: 检查内存缓存
+        String cachedLocation = memoryCache.get(cacheKey);
+        if (cachedLocation != null) {
+            Log.d(TAG, "GPS_DEBUG:💾 [L1命中] 内存缓存: " + cachedLocation);
+            return cachedLocation;
         }
         
-        // 1. 尝试使用Android原生Geocoder (使用中文)
-        try {
-            Geocoder geocoder = new Geocoder(context, Locale.CHINESE);
-            // 获取多个结果以找到最详细的地址
-            List<Address> addresses = geocoder.getFromLocation(latitude, longitude, 5);
-            
-            if (addresses != null && !addresses.isEmpty()) {
-                Log.d(TAG, "GPS_DEBUG:📋 Geocoder返回了 " + addresses.size() + " 个结果");
+        // L2: 检查本地持久化缓存
+        cachedLocation = loadFromDiskCache(context, cacheKey);
+        if (cachedLocation != null) {
+            Log.d(TAG, "GPS_DEBUG:💾 [L2命中] 本地缓存: " + cachedLocation);
+            // 回填到内存缓存
+            memoryCache.put(cacheKey, cachedLocation);
+            return cachedLocation;
+        }
+        
+        Log.d(TAG, "GPS_DEBUG:🔍 [缓存未命中] 需要调用API");
+        
+        // 1. 优先尝试使用高德地图API（中国境内更快更稳定）
+        if (!AMAP_API_KEY.isEmpty()) {
+            try {
+                Log.d(TAG, "GPS_DEBUG:🌐 [优先] 尝试高德地图API反向地理编码");
+                // 坐标转换：WGS84 -> GCJ02 (火星坐标系)
+                // 高德地图要求使用GCJ-02坐标，否则会有数百米偏移
+                double[] gcj = WGS84ToGCJ02(longitude, latitude);
+                double gcjLon = gcj[0];
+                double gcjLat = gcj[1];
+                Log.d(TAG, String.format(Locale.US, "GPS_DEBUG: WGS84(%f, %f) -> GCJ02(%f, %f)", longitude, latitude, gcjLon, gcjLat));
+
+                String urlString = AMAP_API_URL + String.format(Locale.US,
+                    "?key=%s&location=%f,%f&output=json&extensions=base",
+                    AMAP_API_KEY, gcjLon, gcjLat); // 注意：高德API是经度在前
                 
-                // 遍历所有结果，找到最详细的地址
-                for (int i = 0; i < addresses.size(); i++) {
-                    Address address = addresses.get(i);
+                URL url = new URL(urlString);
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestProperty("User-Agent", "BaiduTVPlayer/1.0");
+                connection.setConnectTimeout(CONNECTION_TIMEOUT);
+                connection.setReadTimeout(READ_TIMEOUT);
+                
+                if (connection.getResponseCode() == HttpURLConnection.HTTP_OK) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                    StringBuilder response = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        response.append(line);
+                    }
+                    reader.close();
                     
-                    // 调试：打印每个地址的所有可用信息
-                    Log.d(TAG, "GPS_DEBUG:📋 地址[" + i + "]信息:");
-                    Log.d(TAG, "  - featureName: " + address.getFeatureName());
-                    Log.d(TAG, "  - premises: " + address.getPremises());
-                    Log.d(TAG, "  - subThoroughfare: " + address.getSubThoroughfare());
-                    Log.d(TAG, "  - thoroughfare: " + address.getThoroughfare());
-                    Log.d(TAG, "  - subLocality: " + address.getSubLocality());
-                    Log.d(TAG, "  - locality: " + address.getLocality());
-                    Log.d(TAG, "  - subAdminArea: " + address.getSubAdminArea());
-                    Log.d(TAG, "  - adminArea: " + address.getAdminArea());
-                    Log.d(TAG, "  - postalCode: " + address.getPostalCode());
-                    Log.d(TAG, "  - countryName: " + address.getCountryName());
+                    JSONObject json = new JSONObject(response.toString());
+                    String status = json.optString("status", "0");
                     
+                    if ("1".equals(status)) {
+                        JSONObject regeocode = json.optJSONObject("regeocode");
+                        if (regeocode != null) {
+                            String formattedAddress = regeocode.optString("formatted_address", "");
+                            if (!formattedAddress.isEmpty()) {
+                                // 保存到双层缓存
+                                saveToCache(context, cacheKey, formattedAddress);
+                                Log.d(TAG, "GPS_DEBUG:✅ 高德地图地址: " + formattedAddress);
+                                connection.disconnect();
+                                return formattedAddress;
+                            }
+                        }
+                    } else {
+                        Log.d(TAG, "GPS_DEBUG:⚠️ 高德地图API返回错误状态: " + status);
+                    }
+                }
+                connection.disconnect();
+            } catch (Exception e) {
+                Log.e(TAG, "AMap API failed: " + e.getMessage());
+                Log.d(TAG, "GPS_DEBUG:⚠️ 高德地图API失败，将尝试其他方案");
+            }
+        }
+
+        // 2. 尝试使用Android原生Geocoder (使用中文)
+        // 注意：在中国境内，Android Geocoder依赖Google服务，可能不可用
+        try {
+            if (Geocoder.isPresent()) {
+                Log.d(TAG, "GPS_DEBUG:🌐 尝试Android原生Geocoder");
+                Geocoder geocoder = new Geocoder(context, Locale.CHINESE);
+                // 获取多个结果以找到最详细的地址
+                List<Address> addresses = geocoder.getFromLocation(latitude, longitude, 3);
+                
+                if (addresses != null && !addresses.isEmpty()) {
+                    Log.d(TAG, "GPS_DEBUG:📋 Geocoder返回了 " + addresses.size() + " 个结果");
+                
+                    // 遍历所有结果，找到最详细的地址
+                    for (int i = 0; i < addresses.size(); i++) {
+                        Address address = addresses.get(i);
+                        
+                        // 调试：打印每个地址的所有可用信息
+                        Log.d(TAG, "GPS_DEBUG:📋 地址[" + i + "]信息:");
+                        Log.d(TAG, "  - featureName: " + address.getFeatureName());
+                        // ... (日志保留简化，避免过多输出)
+                        
+                        StringBuilder sb = new StringBuilder();
+                        
+                        // 优先使用 featureName (建筑物/地标名称)
+                        if (address.getFeatureName() != null && !address.getFeatureName().isEmpty()) {
+                            sb.append(address.getFeatureName());
+                        }
+                        
+                        // 添加 subThoroughfare (门牌号)
+                        if (address.getSubThoroughfare() != null) {
+                            if (sb.length() > 0) {
+                                sb.append(" ");
+                            }
+                            sb.append(address.getSubThoroughfare());
+                        }
+                        
+                        // 添加 thoroughfare (街道名称)
+                        if (address.getThoroughfare() != null) {
+                            if (sb.length() > 0) {
+                                sb.append(" ");
+                            }
+                            sb.append(address.getThoroughfare());
+                        }
+                        
+                        // 添加 subLocality (社区/街道办)
+                        if (address.getSubLocality() != null) {
+                            if (sb.length() > 0) {
+                                sb.append(", ");
+                            }
+                            sb.append(address.getSubLocality());
+                        }
+                        
+                        // 添加 subAdminArea (区/县)
+                        if (address.getSubAdminArea() != null) {
+                            if (sb.length() > 0) {
+                                sb.append(", ");
+                            }
+                            sb.append(address.getSubAdminArea());
+                        }
+                        
+                        // 添加 locality (城市)
+                        if (address.getLocality() != null) {
+                            if (sb.length() > 0) {
+                                sb.append(", ");
+                            }
+                            sb.append(address.getLocality());
+                        }
+                        
+                        // 添加 adminArea (省/州)
+                        if (address.getAdminArea() != null) {
+                            if (sb.length() > 0) {
+                                sb.append(", ");
+                            }
+                            sb.append(address.getAdminArea());
+                        }
+                        
+                        String detailedResult = sb.toString();
+                        // 如果找到了包含街道或建筑物的详细地址，直接返回
+                        if (!detailedResult.isEmpty() && (address.getThoroughfare() != null || address.getFeatureName() != null)) {
+                            saveToCache(context, cacheKey, detailedResult);
+                            Log.d(TAG, "GPS_DEBUG:✅ Geocoder详细地址[" + i + "]: " + detailedResult);
+                            return detailedResult;
+                        }
+                    }
+                    
+                    // 如果没有找到详细地址，使用第一个结果
+                    Address address = addresses.get(0);
                     StringBuilder sb = new StringBuilder();
-                    
-                    // 优先使用 featureName (建筑物/地标名称)
-                    if (address.getFeatureName() != null && !address.getFeatureName().isEmpty()) {
-                        sb.append(address.getFeatureName());
-                    }
-                    
-                    // 添加 subThoroughfare (门牌号)
-                    if (address.getSubThoroughfare() != null) {
-                        if (sb.length() > 0) {
-                            sb.append(" ");
-                        }
-                        sb.append(address.getSubThoroughfare());
-                    }
-                    
-                    // 添加 thoroughfare (街道名称)
-                    if (address.getThoroughfare() != null) {
-                        if (sb.length() > 0) {
-                            sb.append(" ");
-                        }
-                        sb.append(address.getThoroughfare());
-                    }
-                    
-                    // 添加 subLocality (社区/街道办)
-                    if (address.getSubLocality() != null) {
-                        if (sb.length() > 0) {
-                            sb.append(", ");
-                        }
-                        sb.append(address.getSubLocality());
-                    }
-                    
-                    // 添加 subAdminArea (区/县)
-                    if (address.getSubAdminArea() != null) {
-                        if (sb.length() > 0) {
-                            sb.append(", ");
-                        }
-                        sb.append(address.getSubAdminArea());
-                    }
-                    
-                    // 添加 locality (城市)
+                    if (address.getSubAdminArea() != null) sb.append(address.getSubAdminArea());
                     if (address.getLocality() != null) {
-                        if (sb.length() > 0) {
-                            sb.append(", ");
-                        }
+                        if (sb.length() > 0) sb.append(", ");
                         sb.append(address.getLocality());
                     }
-                    
-                    // 添加 adminArea (省/州)
                     if (address.getAdminArea() != null) {
-                        if (sb.length() > 0) {
-                            sb.append(", ");
-                        }
+                        if (sb.length() > 0) sb.append(", ");
                         sb.append(address.getAdminArea());
                     }
-                    
-                    String result = sb.toString();
-                    // 如果找到了包含街道或建筑物的详细地址，直接返回
-                    if (!result.isEmpty() && (address.getThoroughfare() != null || address.getFeatureName() != null)) {
-                        locationCache.put(cacheKey, result);
-                        Log.d(TAG, "GPS_DEBUG:✅ Geocoder详细地址[" + i + "]: " + result);
-                        return result;
+                    String basicResult = sb.toString();
+                    if (!basicResult.isEmpty()) {
+                        saveToCache(context, cacheKey, basicResult);
+                        Log.d(TAG, "GPS_DEBUG:✅ Geocoder基础地址: " + basicResult);
+                        return basicResult;
                     }
                 }
-                
-                // 如果没有找到详细地址，使用第一个结果
-                Address address = addresses.get(0);
-                StringBuilder sb = new StringBuilder();
-                if (address.getSubAdminArea() != null) sb.append(address.getSubAdminArea());
-                if (address.getLocality() != null) {
-                    if (sb.length() > 0) sb.append(", ");
-                    sb.append(address.getLocality());
-                }
-                if (address.getAdminArea() != null) {
-                    if (sb.length() > 0) sb.append(", ");
-                    sb.append(address.getAdminArea());
-                }
-                String result = sb.toString();
-                if (!result.isEmpty()) {
-                    locationCache.put(cacheKey, result);
-                    Log.d(TAG, "GPS_DEBUG:✅ Geocoder基础地址: " + result);
-                    return result;
-                }
+            } else {
+                Log.d(TAG, "GPS_DEBUG:⚠️ Geocoder不可用（可能因为缺少Google服务）");
             }
         } catch (Exception e) {
             Log.e(TAG, "Geocoder failed: " + e.getMessage());
+            Log.d(TAG, "GPS_DEBUG:⚠️ Geocoder失败，尝试在线API");
         }
         
-        // 2. 如果原生Geocoder失败，使用OpenStreetMap Nominatim API
+        // 3. 如果以上方法都失败，使用OpenStreetMap Nominatim API（国际通用但可能较慢）
         try {
+            Log.d(TAG, "GPS_DEBUG:🌐 尝试Nominatim API反向地理编码");
             String urlString = NOMINATIM_API_URL + String.format(Locale.US, "?format=json&lat=%f&lon=%f&accept-language=zh",
                     latitude, longitude);
             
@@ -485,7 +617,7 @@ public class LocationUtils {
                     
                     String detailedAddress = sb.toString();
                     if (!detailedAddress.isEmpty()) {
-                        locationCache.put(cacheKey, detailedAddress);
+                        saveToCache(context, cacheKey, detailedAddress);
                         Log.d(TAG, "GPS_DEBUG:✅ Nominatim详细地址: " + detailedAddress);
                         return detailedAddress;
                     }
@@ -494,7 +626,7 @@ public class LocationUtils {
                 // 如果构建失败，回退到 display_name
                 String displayName = json.optString("display_name", "");
                 if (!displayName.isEmpty()) {
-                    locationCache.put(cacheKey, displayName);
+                    saveToCache(context, cacheKey, displayName);
                     Log.d(TAG, "GPS_DEBUG:✅ Nominatim完整地址: " + displayName);
                     return displayName;
                 }
@@ -502,8 +634,11 @@ public class LocationUtils {
             connection.disconnect();
         } catch (Exception e) {
             Log.e(TAG, "Nominatim API failed: " + e.getMessage());
+            Log.d(TAG, "GPS_DEBUG:⚠️ Nominatim API失败，不显示地点信息");
         }
         
+        // 3. 如果所有地理编码方法都失败，不显示地点信息
+        Log.d(TAG, "GPS_DEBUG:❌ 所有地理编码方法失败，返回null");
         return null; // 无法获取地点名称
     }
 
@@ -515,10 +650,156 @@ public class LocationUtils {
     }
     
     /**
-     * 释放资源
+     * 保存到双层缓存
+     */
+    private static void saveToCache(Context context, String cacheKey, String location) {
+        // L1: 保存到内存缓存（LRU策略）
+        if (memoryCache.size() >= MAX_MEMORY_CACHE_SIZE) {
+            // 简单的LRU：移除第一个元素
+            String firstKey = memoryCache.keySet().iterator().next();
+            memoryCache.remove(firstKey);
+            Log.d(TAG, "GPS_DEBUG:💾 [L1清理] 移除旧缓存: " + firstKey);
+        }
+        memoryCache.put(cacheKey, location);
+        
+        // L2: 保存到本地持久化缓存
+        saveToDiskCache(context, cacheKey, location);
+    }
+    
+    /**
+     * 从本地缓存加载
+     */
+    private static String loadFromDiskCache(Context context, String cacheKey) {
+        try {
+            android.content.SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String fullKey = CACHE_KEY_PREFIX + cacheKey;
+            
+            if (prefs.contains(fullKey)) {
+                // 检查是否过期
+                long timestamp = prefs.getLong(fullKey + "_time", 0);
+                long currentTime = System.currentTimeMillis();
+                long expiryTime = CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000L;
+                
+                if (currentTime - timestamp > expiryTime) {
+                    Log.d(TAG, "GPS_DEBUG:💾 [L2过期] 缓存已过期: " + cacheKey);
+                    prefs.edit().remove(fullKey).remove(fullKey + "_time").apply();
+                    return null;
+                }
+                
+                String location = prefs.getString(fullKey, null);
+                if (location != null) {
+                    Log.d(TAG, "GPS_DEBUG:💾 [L2加载] 从本地缓存加载: " + cacheKey);
+                    return location;
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "GPS_DEBUG:❌ [L2错误] 加载本地缓存失败: " + e.getMessage());
+        }
+        return null;
+    }
+    
+    /**
+     * 保存到本地缓存
+     */
+    private static void saveToDiskCache(Context context, String cacheKey, String location) {
+        try {
+            android.content.SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String fullKey = CACHE_KEY_PREFIX + cacheKey;
+            
+            // 检查缓存大小，如果超过限制则清理旧缓存
+            int currentSize = prefs.getAll().size() / 2; // 每个缓存项占用2个key（数据+时间戳）
+            if (currentSize >= MAX_DISK_CACHE_SIZE) {
+                cleanupOldDiskCache(prefs);
+            }
+            
+            // 保存缓存数据和时间戳
+            prefs.edit()
+                .putString(fullKey, location)
+                .putLong(fullKey + "_time", System.currentTimeMillis())
+                .apply();
+            
+            Log.d(TAG, "GPS_DEBUG:💾 [L2保存] 保存到本地缓存: " + cacheKey + " -> " + location);
+        } catch (Exception e) {
+            Log.e(TAG, "GPS_DEBUG:❌ [L2错误] 保存本地缓存失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 清理旧的本地缓存（LRU策略）
+     */
+    private static void cleanupOldDiskCache(android.content.SharedPreferences prefs) {
+        try {
+            java.util.Map<String, ?> all = prefs.getAll();
+            java.util.List<java.util.Map.Entry<String, Long>> entries = new java.util.ArrayList<>();
+            
+            // 收集所有缓存项的时间戳
+            for (java.util.Map.Entry<String, ?> entry : all.entrySet()) {
+                String key = entry.getKey();
+                if (key.endsWith("_time")) {
+                    String dataKey = key.substring(0, key.length() - 5); // 移除"_time"后缀
+                    if (dataKey.startsWith(CACHE_KEY_PREFIX)) {
+                        Long timestamp = (Long) entry.getValue();
+                        entries.add(new java.util.AbstractMap.SimpleEntry<>(dataKey, timestamp));
+                    }
+                }
+            }
+            
+            // 按时间戳排序（最旧的在前）
+            entries.sort(java.util.Comparator.comparingLong(java.util.Map.Entry::getValue));
+            
+            // 删除最旧的20%缓存
+            int toRemove = Math.max(1, entries.size() / 5);
+            for (int i = 0; i < toRemove; i++) {
+                String key = entries.get(i).getKey();
+                prefs.edit().remove(key).remove(key + "_time").apply();
+                Log.d(TAG, "GPS_DEBUG:💾 [L2清理] 移除旧缓存: " + key);
+            }
+            
+            Log.d(TAG, "GPS_DEBUG:💾 [L2清理] 清理完成，移除了 " + toRemove + " 个旧缓存项");
+        } catch (Exception e) {
+            Log.e(TAG, "GPS_DEBUG:❌ [L2错误] 清理本地缓存失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 清空所有缓存
+     */
+    public static void clearAllCache(Context context) {
+        // 清空内存缓存
+        memoryCache.clear();
+        Log.d(TAG, "GPS_DEBUG:💾 [清理] 内存缓存已清空");
+        
+        // 清空本地缓存
+        try {
+            android.content.SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            prefs.edit().clear().apply();
+            Log.d(TAG, "GPS_DEBUG:💾 [清理] 本地缓存已清空");
+        } catch (Exception e) {
+            Log.e(TAG, "GPS_DEBUG:❌ [清理] 清空本地缓存失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 获取缓存统计信息
+     */
+    public static String getCacheStats(Context context) {
+        int memorySize = memoryCache.size();
+        int diskSize = 0;
+        try {
+            android.content.SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            diskSize = prefs.getAll().size() / 2; // 每个缓存项占用2个key
+        } catch (Exception e) {
+            // ignore
+        }
+        return String.format(Locale.US, "内存缓存: %d/%d, 本地缓存: %d/%d",
+            memorySize, MAX_MEMORY_CACHE_SIZE, diskSize, MAX_DISK_CACHE_SIZE);
+    }
+    
+    /**
+     * 释放资源（保留兼容性）
      */
     public static void release() {
-        locationCache.clear();
+        memoryCache.clear();
     }
     
     /**
@@ -593,7 +874,17 @@ public class LocationUtils {
         // 实践证明，简单的文本搜索对于提取ISO-6709格式的GPS信息非常有效
         // 且不需要创建临时文件和引入复杂的解析逻辑
         Log.d(TAG, GPS_DEBUG + "开始在视频数据中搜索GPS信息...");
-        return searchForGPSCoordinates(context, data);
+        
+        // 方法1: 文本搜索（优先，因为更快）
+        String location = searchForGPSCoordinates(context, data);
+        if (location != null) {
+            return location;
+        }
+        
+        // 不再使用二进制数据搜索，因为其可靠性较低
+        Log.d(TAG, GPS_DEBUG + "❌ 文本搜索失败，跳过不可靠的二进制数据搜索");
+        
+        return null;
     }
 
     /**
@@ -611,9 +902,14 @@ public class LocationUtils {
             for (String keyword : gpsKeywords) {
                 if (dataString.contains(keyword)) {
                     int index = dataString.indexOf(keyword);
-                    int start = Math.max(0, index - 50);
-                    int end = Math.min(dataString.length(), index + 100);
-                    Log.d(TAG, GPS_DEBUG + "🔍 找到关键字 '" + keyword + "' 附近内容: " + dataString.substring(start, end));
+                    // 只打印关键字本身，避免打印二进制乱码
+                    Log.d(TAG, GPS_DEBUG + "🔍 找到关键字 '" + keyword + "' 在位置: " + index);
+                    
+                    // 尝试提取关键字附近的可打印ASCII字符
+                    String nearbyText = extractPrintableText(dataString, index, 200);
+                    if (!nearbyText.isEmpty()) {
+                        Log.d(TAG, GPS_DEBUG + "🔍 关键字附近可打印文本: " + nearbyText);
+                    }
                 }
             }
             
@@ -636,7 +932,11 @@ public class LocationUtils {
                 "\"latitude\":\\s*([+-]?\\d+\\.\\d+).*\"longitude\":\\s*([+-]?\\d+\\.\\d+)",
                 
                 // XYZ原子内容格式
-                "©xyz.+?([+-]\\d+\\.\\d+)([+-]\\d+\\.\\d+)"
+                "©xyz.+?([+-]\\d+\\.\\d+)([+-]\\d+\\.\\d+)",
+                
+                // 增加更多的模糊匹配模式，应对二进制数据中的非标准格式
+                // 匹配连续的两个浮点数，中间可能有乱码
+                "([+-]\\d{2,3}\\.\\d{4,})[^\\d+-]{1,10}([+-]\\d{2,3}\\.\\d{4,})"
             };
             
             Log.d(TAG, GPS_DEBUG + "开始使用 " + patterns.length + " 种正则模式搜索GPS坐标");
@@ -662,6 +962,14 @@ public class LocationUtils {
                             String lon = matcher.group(2);
                             match = lat + lon;
                         }
+                    } else if (matcher.groupCount() >= 2) {
+                        // 通用处理：如果匹配了两个组，假设是经纬度
+                        String lat = matcher.group(1);
+                        String lon = matcher.group(2);
+                        // 清理非数字字符
+                        lat = lat.replaceAll("[^\\d.+\\-]", "");
+                        lon = lon.replaceAll("[^\\d.+\\-]", "");
+                        match = "+" + lat + "+" + lon;
                     }
                     
                     // 解析GPS坐标
@@ -703,7 +1011,27 @@ public class LocationUtils {
         
         return null;
     }
-
+    
+    
+    /**
+     * 提取字符串中附近的可打印文本（用于调试）
+     */
+    private static String extractPrintableText(String data, int center, int radius) {
+        int start = Math.max(0, center - radius);
+        int end = Math.min(data.length(), center + radius);
+        StringBuilder sb = new StringBuilder();
+        
+        for (int i = start; i < end; i++) {
+            char c = data.charAt(i);
+            // 只保留可打印ASCII字符
+            if (c >= 32 && c <= 126) {
+                sb.append(c);
+            } else {
+                sb.append('.'); // 不可打印字符用点代替
+            }
+        }
+        return sb.toString();
+    }
     
     private static byte[] downloadVideoHeader(String videoUrl, int maxSize) {
         Log.d(TAG, GPS_DEBUG + "准备下载文件头，目标大小: " + maxSize + " bytes");
@@ -817,5 +1145,48 @@ public class LocationUtils {
         }
         buffer.flush();
         return buffer.toByteArray();
+    }
+
+    // ====================== 核心算法：WGS84 转 GCJ02 (火星坐标) ======================
+    // 参考：https://github.com/googollee/eviltransform
+    private static final double PI = 3.1415926535897932384626;
+    private static final double A = 6378245.0;
+    private static final double EE = 0.00669342162296594323;
+
+    public static double[] WGS84ToGCJ02(double lon, double lat) {
+        if (outOfChina(lon, lat)) {
+            return new double[]{lon, lat};
+        }
+        double dLat = transformLat(lon - 105.0, lat - 35.0);
+        double dLon = transformLon(lon - 105.0, lat - 35.0);
+        double radLat = lat / 180.0 * PI;
+        double magic = Math.sin(radLat);
+        magic = 1 - EE * magic * magic;
+        double sqrtMagic = Math.sqrt(magic);
+        dLat = (dLat * 180.0) / ((A * (1 - EE)) / (magic * sqrtMagic) * PI);
+        dLon = (dLon * 180.0) / (A / sqrtMagic * Math.cos(radLat) * PI);
+        double mgLat = lat + dLat;
+        double mgLon = lon + dLon;
+        return new double[]{mgLon, mgLat};
+    }
+
+    private static boolean outOfChina(double lon, double lat) {
+        return (lon < 72.004 || lon > 137.8347) || (lat < 0.8293 || lat > 55.8271);
+    }
+
+    private static double transformLat(double x, double y) {
+        double ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+        ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(y * PI) + 40.0 * Math.sin(y / 3.0 * PI)) * 2.0 / 3.0;
+        ret += (160.0 * Math.sin(y / 12.0 * PI) + 320 * Math.sin(y * PI / 30.0)) * 2.0 / 3.0;
+        return ret;
+    }
+
+    private static double transformLon(double x, double y) {
+        double ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+        ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(x * PI) + 40.0 * Math.sin(x / 3.0 * PI)) * 2.0 / 3.0;
+        ret += (150.0 * Math.sin(x / 12.0 * PI) + 300.0 * Math.sin(x / 30.0 * PI)) * 2.0 / 3.0;
+        return ret;
     }
 }

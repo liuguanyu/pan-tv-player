@@ -92,6 +92,49 @@
 - ✅ [`PreferenceUtils.java`](app/src/main/java/com/baidu/tv/player/utils/PreferenceUtils.java) - SharedPreferences工具
 - ✅ [`QRCodeUtils.java`](app/src/main/java/com/baidu/tv/player/utils/QRCodeUtils.java) - 二维码工具
 
+#### 15. 遥控器支持 (2026-02-03新增)
+- ✅ 所有页面完整支持遥控器D-pad导航
+- ✅ 焦点视觉反馈增强
+  - [`card_selector.xml`](app/src/main/res/drawable/card_selector.xml) - 卡片焦点选择器
+  - [`selector_item_background.xml`](app/src/main/res/drawable/selector_item_background.xml) - 列表项背景选择器
+  - [`focus_zoom.xml`](app/src/main/res/animator/focus_zoom.xml) - 焦点缩放动画（1.05倍）
+  - [`focus_scale.xml`](app/src/main/res/animator/focus_scale.xml) - 焦点缩放动画（1.1倍）
+- ✅ 默认焦点管理
+  - 主页面：智能聚焦第一个播放列表或浏览按钮
+  - 文件浏览页面：自动聚焦第一个文件项
+  - 播放页面：自动聚焦播放/暂停按钮
+  - 设置页面：自动聚焦第一个设置项
+- ✅ 播放页面按键映射
+  - 左/右方向键：快速切换上/下一张
+  - 确认键：显示/隐藏控制栏
+- ✅ 遥控器使用指南文档
+  - [`REMOTE_CONTROL_GUIDE.md`](REMOTE_CONTROL_GUIDE.md) - 详细操作说明
+  
+#### 16. 视频播放问题修复 (2026-02-04新增)
+- ✅ 修复进度条不更新问题
+  - 在ExoPlayer和VLC播放时正确启动进度更新
+- ✅ 增强视频渲染监控
+  - 添加视频轨道检测
+  - 添加第一帧渲染回调
+  - 增加详细日志输出
+- ✅ 优化PlayerView配置
+  - 将resize_mode从fill改为fit
+  - 添加缓冲状态显示
+  - 更新注释将ExoPlayer标记为主力播放器
+- ✅ 创建视频播放问题修复总结文档
+  - [`VIDEO_PLAYBACK_FIXES.md`](VIDEO_PLAYBACK_FIXES.md) - 详细修复说明
+
+#### 17. 图片地点提取崩溃修复 (2026-02-04新增)
+- ✅ 修复 ExifInterface 从网络流读取导致的 RuntimeException
+  - 改用临时文件方式读取 EXIF，避免直接从网络流读取
+  - 添加文件大小限制（10MB），防止下载过大文件
+  - 添加完善的资源清理机制
+- ✅ 增强异常捕获
+  - 在 LocationUtils 中捕获 Throwable 而不仅仅是 Exception
+  - 在 LocationExtractionService 中添加更详细的异常日志
+- ✅ 创建地点提取修复总结文档
+  - [`LOCATION_EXTRACTION_FIX.md`](LOCATION_EXTRACTION_FIX.md) - 详细修复说明和测试建议
+
 ### 🚧 待实现的工作
 
 暂无
@@ -142,7 +185,16 @@
 2. 测试不同网络环境下的表现
 3. 测试各种媒体格式的兼容性
 4. 优化性能和用户体验
-5. 打包发布APK
+5. **重点测试遥控器支持功能**（新增）
+   - 测试所有页面的D-pad导航流畅性
+   - 验证焦点视觉效果在不同亮度环境下的可见性
+   - 测试默认焦点设置的合理性
+   - 验证播放页面的按键映射功能
+ 6. 测试视频播放修复功能（新增）
+   - 验证进度条是否正常更新
+   - 测试在模拟器上是否还有"有声音无图像"的问题
+   - 检查日志输出是否正常
+ 7. 打包发布APK
 
 ## 开发建议
 

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 获得焦点时放大 -->
+    <item android:state_focused="true">
+        <objectAnimator
+            android:propertyName="scaleX"
+            android:duration="150"
+            android:valueTo="1.1"
+            android:valueType="floatType" />
+        <objectAnimator
+            android:propertyName="scaleY"
+            android:duration="150"
+            android:valueTo="1.1"
+            android:valueType="floatType" />
+    </item>
+    <!-- 失去焦点时恢复 -->
+    <item>
+        <objectAnimator
+            android:propertyName="scaleX"
+            android:duration="150"
+            android:valueTo="1.0"
+            android:valueType="floatType" />
+        <objectAnimator
+            android:propertyName="scaleY"
+            android:duration="150"
+            android:valueTo="1.0"
+            android:valueType="floatType" />
+    </item>
+</selector>
