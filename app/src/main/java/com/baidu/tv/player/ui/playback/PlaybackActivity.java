@@ -27,6 +27,8 @@ import androidx.lifecycle.ViewModelProvider;
 
 import com.baidu.tv.player.R;
 import com.baidu.tv.player.model.FileInfo;
+import com.baidu.tv.player.effects.ImageEffectFactory;
+import com.baidu.tv.player.effects.ImageEffectStrategy;
 import com.baidu.tv.player.model.ImageEffect;
 import com.baidu.tv.player.model.PlayMode;
 import com.baidu.tv.player.model.PlaybackHistory;
@@ -1162,6 +1164,8 @@ public class PlaybackActivity extends FragmentActivity {
 
     /**
      * 应用图片特效
+     * 使用策略模式和工厂模式替代原来的switch-case语句
+     * @param effect 图片特效类型
      */
     private void applyImageEffect(ImageEffect effect) {
         // 确保视图可见
@@ -1175,86 +1179,10 @@ public class PlaybackActivity extends FragmentActivity {
         ivImageDisplay.setRotation(0);
         ivImageDisplay.setAlpha(1.0f);
         
-        switch (effect) {
-            case FLOAT:
-                // 浮动效果：缓慢放大
-                ivImageDisplay.animate()
-                        .scaleX(1.1f)
-                        .scaleY(1.1f)
-                        .setDuration(5000)
-                        .setInterpolator(new android.view.animation.LinearInterpolator())
-                        .start();
-                break;
-                
-            case BOUNCE:
-                // 跳动效果：先缩小再弹回
-                ivImageDisplay.setScaleX(0.8f);
-                ivImageDisplay.setScaleY(0.8f);
-                ivImageDisplay.animate()
-                        .scaleX(1.0f)
-                        .scaleY(1.0f)
-                        .setDuration(800)
-                        .setInterpolator(new android.view.animation.BounceInterpolator())
-                        .start();
-                break;
-                
-            case EASE:
-                // 缓动效果：从右侧滑入
-                ivImageDisplay.setTranslationX(80f);
-                ivImageDisplay.animate()
-                        .translationX(0f)
-                        .setDuration(800)
-                        .setInterpolator(new android.view.animation.DecelerateInterpolator())
-                        .start();
-                break;
-                
-            case BLINDS:
-                // 百叶窗效果：启动自定义动画
-                ivImageDisplay.resetBlinds();
-                ivImageDisplay.post(() -> ivImageDisplay.startBlindsAnimation());
-                break;
-                
-            case ZOOM:
-                // 放大效果：从中心放大
-                ivImageDisplay.setScaleX(0.7f);
-                ivImageDisplay.setScaleY(0.7f);
-                ivImageDisplay.animate()
-                        .scaleX(1.0f)
-                        .scaleY(1.0f)
-                        .setDuration(800)
-                        .setInterpolator(new android.view.animation.DecelerateInterpolator())
-                        .start();
-                break;
-                
-            case ROTATE:
-                // 旋转效果：从旋转状态恢复
-                ivImageDisplay.setRotation(180f);
-                ivImageDisplay.animate()
-                        .rotation(0f)
-                        .setDuration(800)
-                        .setInterpolator(new android.view.animation.DecelerateInterpolator())
-                        .start();
-                break;
-                
-            case SLIDE:
-                // 滑入效果：从左侧滑入并放大
-                ivImageDisplay.setTranslationX(-100f);
-                ivImageDisplay.setScaleX(0.9f);
-                ivImageDisplay.setScaleY(0.9f);
-                ivImageDisplay.animate()
-                        .translationX(0f)
-                        .scaleX(1.0f)
-                        .scaleY(1.0f)
-                        .setDuration(800)
-                        .setInterpolator(new android.view.animation.DecelerateInterpolator())
-                        .start();
-                break;
-                
-            case FADE:
-            default:
-                // FADE效果完全由Glide的CrossFade处理，不需要额外动画
-                break;
-        }
+        // 使用工厂方法创建特效策略并应用
+        // 注意：这里的effect已经是从ImageEffect.getActualEffect()获取的实际特效
+        ImageEffectStrategy strategy = ImageEffectFactory.createEffectStrategy(effect);
+        strategy.applyEffect(ivImageDisplay);
     }
     
     /**
