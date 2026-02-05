@@ -1188,6 +1188,7 @@ public class PlaybackActivity extends FragmentActivity {
     /**
      * 更新图片背景（主色调或毛玻璃效果）
      * 在图片加载完成后调用
+     * 使用策略模式实现，方便扩展新的背景效果
      */
     private void updateImageBackground(android.graphics.drawable.Drawable imageDrawable) {
         if (imageDrawable == null || ivBackground == null) {
@@ -1199,96 +1200,15 @@ public class PlaybackActivity extends FragmentActivity {
         if (imageUrl == null || imageUrl.isEmpty()) {
             imageUrl = "unknown";
         }
-        final String finalImageUrl = imageUrl;
         
         // 从设置中获取背景模式
         // 0: 纯黑色背景, 1: 主色调背景, 2: 毛玻璃背景
         int backgroundMode = PreferenceUtils.getBackgroundMode(this);
         
-        switch (backgroundMode) {
-            case 0: // 纯黑色背景
-                ivBackground.setBackgroundColor(android.graphics.Color.BLACK);
-                ivBackground.setImageBitmap(null);
-                ivBackground.setVisibility(View.VISIBLE);
-                break;
-                
-            case 1: // 主色调背景
-                // 在后台线程中提取主色调
-                new Thread(() -> {
-                    try {
-                        int dominantColor = ImageBackgroundUtils.extractDominantColor(
-                            PlaybackActivity.this,
-                            finalImageUrl,
-                            imageDrawable
-                        );
-                        runOnUiThread(() -> {
-                            ivBackground.setBackgroundColor(dominantColor);
-                            ivBackground.setImageBitmap(null);
-                            ivBackground.setVisibility(View.VISIBLE);
-                        });
-                    } catch (Exception e) {
-                        android.util.Log.e("PlaybackActivity", "提取主色调失败", e);
-                        runOnUiThread(() -> {
-                            ivBackground.setBackgroundColor(android.graphics.Color.BLACK);
-                            ivBackground.setImageBitmap(null);
-                            ivBackground.setVisibility(View.VISIBLE);
-                        });
-                    }
-                }).start();
-                break;
-                
-            case 2: // 毛玻璃背景
-                // 在后台线程中生成模糊背景
-                new Thread(() -> {
-                    try {
-                        android.graphics.Bitmap blurredBitmap = ImageBackgroundUtils.createBlurredBackground(
-                            PlaybackActivity.this,
-                            finalImageUrl,
-                            imageDrawable,
-                            15.0f,  // 模糊半径
-                            8       // 缩小倍数
-                        );
-                        
-                        runOnUiThread(() -> {
-                            if (blurredBitmap != null) {
-                                ivBackground.setImageBitmap(blurredBitmap);
-                                ivBackground.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                                ivBackground.setVisibility(View.VISIBLE);
-                            } else {
-                                // 如果模糊失败，回退到主色调
-                                int dominantColor = ImageBackgroundUtils.extractDominantColor(
-                                    PlaybackActivity.this,
-                                    finalImageUrl,
-                                    imageDrawable
-                                );
-                                ivBackground.setBackgroundColor(dominantColor);
-                                ivBackground.setImageBitmap(null);
-                                ivBackground.setVisibility(View.VISIBLE);
-                            }
-                        });
-                    } catch (Exception e) {
-                        android.util.Log.e("PlaybackActivity", "生成模糊背景失败", e);
-                        runOnUiThread(() -> {
-                            // 回退到主色调
-                            int dominantColor = ImageBackgroundUtils.extractDominantColor(
-                                PlaybackActivity.this,
-                                finalImageUrl,
-                                imageDrawable
-                            );
-                            ivBackground.setBackgroundColor(dominantColor);
-                            ivBackground.setImageBitmap(null);
-                            ivBackground.setVisibility(View.VISIBLE);
-                        });
-                    }
-                }).start();
-                break;
-                
-            default:
-                ivBackground.setBackgroundColor(android.graphics.Color.BLACK);
-                ivBackground.setImageBitmap(null);
-                ivBackground.setVisibility(View.VISIBLE);
-                break;
-        }
+        // 使用工厂方法创建背景策略并应用
+        com.baidu.tv.player.background.ImageBackgroundStrategy strategy =
+            com.baidu.tv.player.background.ImageBackgroundFactory.getStrategy(backgroundMode);
+        strategy.applyBackground(this, ivBackground, imageUrl, imageDrawable);
     }
     
 
