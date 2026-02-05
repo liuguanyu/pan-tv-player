@@ -98,7 +98,6 @@ public class MainFragment extends Fragment {
         
         viewModel.getRecentHistory().observe(getViewLifecycleOwner(), historyList -> {
             if (historyList == null || historyList.isEmpty()) {
-                tvRecentTitle.setVisibility(View.GONE);
                 rvRecentTasks.setVisibility(View.GONE);
             } else {
                 tvRecentTitle.setVisibility(View.VISIBLE);
@@ -114,6 +113,7 @@ public class MainFragment extends Fragment {
     private void loadPlaylists() {
         playlistRepository = new PlaylistRepository(requireContext());
         playlistRepository.getAllPlaylists().observe(getViewLifecycleOwner(), playlists -> {
+            // 播放列表标题始终显示
             if (playlists == null || playlists.isEmpty()) {
                 rvPlaylists.setVisibility(View.GONE);
                 tvNoPlaylist.setVisibility(View.VISIBLE);
