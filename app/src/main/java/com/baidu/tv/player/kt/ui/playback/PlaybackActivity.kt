@@ -3,6 +3,7 @@ package com.baidu.tv.player.kt.ui.playback
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
+import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.PixelCopy
@@ -53,6 +54,7 @@ private const val PROGRESS_INTERVAL_MS = 1_000L
 private const val THUMBNAIL_CAPTURE_RETRIES = 5
 private const val THUMBNAIL_CAPTURE_DELAY_MS = 800L
 private const val TAG = "PlaybackActivity"
+private const val SONY_OUTPUT_ROTATION_DEGREES = 90f
 
 /**
  * 播放页（Phase 5）：Media3 视频播放 + 图片播放/特效/背景。
@@ -596,7 +598,15 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         runOnUiThread {
             currentVideoWidth = width
             currentVideoHeight = height
-            resizeVideoSurface(width, height)
+            // 当前 Sony KD-65X9500H 的视频 Surface 输出统一逆时针偏转 90°。
+            // 两个后端最终共用同一个 SurfaceView，因此只在 Sony 设备统一顺时针补偿；
+            // 其他 Android TV 不改变原始方向。
+            val outputRotation = if (Build.MANUFACTURER.equals("Sony", ignoreCase = true)) {
+                SONY_OUTPUT_ROTATION_DEGREES
+            } else {
+                0f
+            }
+            resizeVideoSurface(width, height, outputRotation)
             if (infoVisible) renderInfoPanel(viewModel.uiState.value)
         }
     }
@@ -610,7 +620,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         binding.videoSurface.layoutParams = params
     }
 
-    private fun resizeVideoSurface(videoWidth: Int, videoHeight: Int) {
+    private fun resizeVideoSurface(videoWidth: Int, videoHeight: Int, outputRotation: Float = 0f) {
         val container = binding.playbackRoot
         val target = VideoLayoutCalculator.fitCenter(
             videoWidth = videoWidth,
@@ -618,11 +628,12 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
             containerWidth = container.width,
             containerHeight = container.height,
         ) ?: return
+        val quarterTurn = outputRotation == 90f || outputRotation == 270f
         val params = binding.videoSurface.layoutParams as? android.widget.FrameLayout.LayoutParams ?: return
-        params.width = target.width
-        params.height = target.height
+        params.width = if (quarterTurn) target.height else target.width
+        params.height = if (quarterTurn) target.width else target.height
         params.gravity = android.view.Gravity.CENTER
-        binding.videoSurface.rotation = 0f
+        binding.videoSurface.rotation = outputRotation
         binding.videoSurface.layoutParams = params
     }
 
