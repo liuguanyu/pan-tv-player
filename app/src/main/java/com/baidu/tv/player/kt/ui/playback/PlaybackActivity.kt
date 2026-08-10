@@ -1,5 +1,6 @@
 package com.baidu.tv.player.kt.ui.playback
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
 import android.os.Bundle
@@ -30,6 +31,7 @@ import com.baidu.tv.player.kt.player.UnsupportedReason
 import com.baidu.tv.player.kt.player.VideoPlayerEngine
 import com.baidu.tv.player.kt.ui.playback.image.ImageBackgroundFactory
 import com.baidu.tv.player.kt.ui.playback.image.ImageEffectFactory
+import com.baidu.tv.player.kt.ui.settings.SettingsActivity
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.target.BitmapImageViewTarget
 import com.bumptech.glide.request.transition.Transition
@@ -70,6 +72,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     private var progressJob: Job? = null
     private var pendingVideo: Pair<String, FileInfo>? = null
     private var fatalErrorShown = false
+    private var resumePlaybackOnReturn = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -456,8 +459,13 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
         return when (event.keyCode) {
-            // 菜单/信息键：呼出文件信息面板（含当前解码后端），不再跳转设置页打断播放。
-            KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_M, KeyEvent.KEYCODE_INFO -> {
+            // 设置/菜单键：播放期间也可直接进入设置；返回后恢复原播放状态。
+            KeyEvent.KEYCODE_SETTINGS, KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_M -> {
+                startActivity(Intent(this, SettingsActivity::class.java))
+                true
+            }
+            // 专用信息键保留文件信息面板（含当前解码后端）。
+            KeyEvent.KEYCODE_INFO -> {
                 toggleInfoPanel()
                 true
             }
@@ -681,9 +689,20 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         return "%02d:%02d".format(minutes, seconds)
     }
 
+    override fun onResume() {
+        super.onResume()
+        hideSystemBars()
+        val state = viewModel.uiState.value
+        if (resumePlaybackOnReturn && state.isCurrentVideo && state.contentReady) {
+            videoPlayerEngine.resume()
+        }
+        resumePlaybackOnReturn = false
+    }
+
     override fun onPause() {
-        super.onPause()
+        resumePlaybackOnReturn = viewModel.uiState.value.isCurrentVideo && videoPlayerEngine.isPlaying()
         videoPlayerEngine.pause()
+        super.onPause()
     }
 
     override fun onDestroy() {

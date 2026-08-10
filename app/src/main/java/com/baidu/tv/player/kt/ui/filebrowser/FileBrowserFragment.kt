@@ -137,7 +137,14 @@ class FileBrowserFragment : Fragment() {
                 requireActivity().finish()
             }
             is FileBrowserUiEvent.PlaylistCreationFailed -> Toast.makeText(requireContext(), event.message, Toast.LENGTH_SHORT).show()
-            is FileBrowserUiEvent.SelectionChanged -> Toast.makeText(requireContext(), event.message, Toast.LENGTH_SHORT).show()
+            is FileBrowserUiEvent.SelectionChanged -> {
+                Toast.makeText(requireContext(), event.message, Toast.LENGTH_SHORT).show()
+                // 长列表中完成一次选择后，直接把焦点交给「确认选择」。
+                // 用户可立即确认；如需继续选择，按下键即可回到当前可见列表，避免一路按上返回顶部。
+                if (viewModel.uiState.value.multiSelectMode && viewModel.uiState.value.selectedPaths.isNotEmpty()) {
+                    binding.btnPlaySelected.post { binding.btnPlaySelected.requestFocus() }
+                }
+            }
             is FileBrowserUiEvent.Error -> Toast.makeText(requireContext(), event.message, Toast.LENGTH_SHORT).show()
         }
     }
