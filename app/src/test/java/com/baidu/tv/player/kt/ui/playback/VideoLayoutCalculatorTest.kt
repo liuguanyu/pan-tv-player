@@ -23,6 +23,24 @@ class VideoLayoutCalculatorTest {
     }
 
     @Test
+    fun fitCenter_rotated90_swapsVisualAndSurfaceDimensions() {
+        val layout = VideoLayoutCalculator.fitCenterLayout(1920, 1080, 1920, 1080, 90)
+
+        requireNotNull(layout)
+        assertEquals(VideoLayoutCalculator.Size(608, 1080), layout.visualSize)
+        assertEquals(VideoLayoutCalculator.Size(1080, 608), layout.surfaceSize)
+    }
+
+    @Test
+    fun fitCenter_rotated270_portraitVideo_fillsHeight() {
+        val layout = VideoLayoutCalculator.fitCenterLayout(1080, 1920, 1920, 1080, 270)
+
+        requireNotNull(layout)
+        assertEquals(VideoLayoutCalculator.Size(1920, 1080), layout.visualSize)
+        assertEquals(VideoLayoutCalculator.Size(1080, 1920), layout.surfaceSize)
+    }
+
+    @Test
     fun fitCenter_fourByThreeVideo_hasPillarBox() {
         assertEquals(
             VideoLayoutCalculator.Size(1440, 1080),
