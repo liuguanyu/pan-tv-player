@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 间距梯度 -->
+    <dimen name="spacing_xs">4dp</dimen>
+    <dimen name="spacing_sm">8dp</dimen>
+    <dimen name="spacing_md">12dp</dimen>
+    <dimen name="spacing_lg">16dp</dimen>
+    <dimen name="spacing_xl">24dp</dimen>
+    <dimen name="spacing_screen">40dp</dimen>
+
+    <!-- 卡片 -->
+    <dimen name="card_radius">8dp</dimen>
+    <dimen name="card_spacing">20dp</dimen>
+    <dimen name="playlist_card_width">240dp</dimen>
+    <dimen name="playlist_cover_height">135dp</dimen>
+    <dimen name="recent_card_width">220dp</dimen>
+    <dimen name="recent_card_height">124dp</dimen>
+
+    <!-- 顶部品牌区 -->
+    <dimen name="brand_logo_size">40dp</dimen>
+</resources>

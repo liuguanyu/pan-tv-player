@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="primary">#1565C0</color>
+    <color name="primary_dark">#0D47A1</color>
+    <color name="accent">#FF6F00</color>
+    <color name="background">#1A1A1A</color>
+    <color name="surface">#2D2D2D</color>
+    <color name="text_primary">#FFFFFF</color>
+    <!-- 标题弱强调（空状态标题等） -->
+    <color name="text_primary_dim">#CCFFFFFF</color>
+    <color name="text_secondary">#B3B3B3</color>
+    <!-- 辅助说明文字（空状态副标题等） -->
+    <color name="text_tertiary">#80FFFFFF</color>
+    <color name="item_normal">#1E1E1E</color>
+    <color name="item_focused">#1976D2</color>
+    <color name="item_focused_bright">#2196F3</color>
+    <color name="card_background">#1E1E1E</color>
+    <color name="card_focused">#263238</color>
+
+    <!-- 顶部操作按钮 -->
+    <color name="action_button_normal">#26FFFFFF</color>
+    <color name="action_button_focused">#2196F3</color>
+
+    <!-- 媒体类型徽章 -->
+    <color name="badge_image">#CC4CAF50</color>
+    <color name="badge_video">#CCFF5722</color>
+    <color name="badge_all">#CC3F51B5</color>
+
+    <!-- 区块标题左侧强调条 -->
+    <color name="section_accent">#2196F3</color>
+</resources>

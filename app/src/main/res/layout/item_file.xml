@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 文件浏览列表行：视觉风格对齐设置页 SettingsRow（selector_item_background 焦点高亮），
+     不再使用缩放动画/描边 foreground，避免选中框被 RecyclerView 裁切。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="8dp"
+    android:background="@drawable/selector_item_background"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingHorizontal="24dp"
+    android:paddingVertical="12dp">
+
+    <ImageView
+        android:id="@+id/iv_file_icon"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:contentDescription="文件图标"
+        android:focusable="false"
+        android:scaleType="centerCrop" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_weight="1"
+        android:focusable="false"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tv_file_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:focusable="false"
+            android:maxLines="1"
+            android:text="文件名.jpg"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp" />
+
+        <TextView
+            android:id="@+id/tv_file_info"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:focusable="false"
+            android:text="1.5 MB · 2024-01-01"
+            android:textColor="#99FFFFFF"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/iv_selected"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginStart="16dp"
+        android:contentDescription="已选中"
+        android:focusable="false"
+        android:src="@android:drawable/checkbox_on_background"
+        android:visibility="gone" />
+
+</LinearLayout>

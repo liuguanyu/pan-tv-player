@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_main_gradient"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="64dp"
+        android:paddingVertical="48dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="32dp"
+            android:text="@string/settings_title"
+            android:textColor="#FFFFFF"
+            android:textSize="32sp"
+            android:textStyle="bold" />
+
+        <!-- 播放模式 -->
+        <LinearLayout
+            android:id="@+id/rowPlayMode"
+            style="@style/SettingsRow"
+            android:focusable="true">
+
+            <TextView
+                style="@style/SettingsRowLabel"
+                android:text="@string/settings_play_mode" />
+
+            <TextView
+                android:id="@+id/valuePlayMode"
+                style="@style/SettingsRowValue"
+                tools:text="顺序播放" />
+        </LinearLayout>
+
+        <!-- 图片特效 -->
+        <LinearLayout
+            android:id="@+id/rowImageEffect"
+            style="@style/SettingsRow"
+            android:focusable="true">
+
+            <TextView
+                style="@style/SettingsRowLabel"
+                android:text="@string/settings_image_effect" />
+
+            <TextView
+                android:id="@+id/valueImageEffect"
+                style="@style/SettingsRowValue"
+                tools:text="淡入淡出" />
+        </LinearLayout>
+
+        <!-- 图片背景 -->
+        <LinearLayout
+            android:id="@+id/rowBackground"
+            style="@style/SettingsRow"
+            android:focusable="true">
+
+            <TextView
+                style="@style/SettingsRowLabel"
+                android:text="@string/settings_background_mode" />
+
+            <TextView
+                android:id="@+id/valueBackground"
+                style="@style/SettingsRowValue"
+                tools:text="主色调背景" />
+        </LinearLayout>
+
+        <!-- 幻灯片间隔 -->
+        <LinearLayout
+            android:id="@+id/rowDisplayDuration"
+            style="@style/SettingsRow"
+            android:focusable="true">
+
+            <TextView
+                style="@style/SettingsRowLabel"
+                android:text="@string/settings_display_duration" />
+
+            <TextView
+                android:id="@+id/valueDisplayDuration"
+                style="@style/SettingsRowValue"
+                tools:text="10 秒" />
+        </LinearLayout>
+
+        <!-- 过渡时长 -->
+        <LinearLayout
+            android:id="@+id/rowTransitionDuration"
+            style="@style/SettingsRow"
+            android:focusable="true">
+
+            <TextView
+                style="@style/SettingsRowLabel"
+                android:text="@string/settings_transition_duration" />
+
+            <TextView
+                android:id="@+id/valueTransitionDuration"
+                style="@style/SettingsRowValue"
+                tools:text="1.0 秒" />
+        </LinearLayout>
+
+        <!-- 地点识别开关 -->
+        <LinearLayout
+            android:id="@+id/rowShowLocation"
+            style="@style/SettingsRow"
+            android:focusable="true">
+
+            <TextView
+                style="@style/SettingsRowLabel"
+                android:text="@string/settings_show_location" />
+
+            <TextView
+                android:id="@+id/valueShowLocation"
+                style="@style/SettingsRowValue"
+                tools:text="开启" />
+        </LinearLayout>
+
+        <!-- 播放计数器开关 -->
+        <LinearLayout
+            android:id="@+id/rowShowCounter"
+            style="@style/SettingsRow"
+            android:focusable="true">
+
+            <TextView
+                style="@style/SettingsRowLabel"
+                android:text="@string/settings_show_counter" />
+
+            <TextView
+                android:id="@+id/valueShowCounter"
+                style="@style/SettingsRowValue"
+                tools:text="开启" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/settings_show_location_hint"
+            android:textColor="#99FFFFFF"
+            android:textSize="14sp" />
+    </LinearLayout>
+</ScrollView>

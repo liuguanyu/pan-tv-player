@@ -1,0 +1,40 @@
+schema: spec-driven
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+context: |
+  **项目定位**：这是 pan-tv-player 的 Kotlin 重写版，原 Java 项目位于 `/Users/liuguanyu/devspace/pan-tv-player/`。
+
+  **参考源码**：所有功能需求以 Java 项目的实际源码为准（不是文档）。Java 项目结构：
+  - `app/src/main/java/com/baidu/tv/player/` — 主源码
+  - `app/src/main/java/com/baidu/tv/player/auth/` — OAuth 设备码认证
+  - `app/src/main/java/com/baidu/tv/player/network/` — Retrofit PCS API
+  - `app/src/main/java/com/baidu/tv/player/model/` — 数据模型
+  - `app/src/main/java/com/baidu/tv/player/database/` — Room 数据库
+  - `app/src/main/java/com/baidu/tv/player/repository/` — 数据仓库
+  - `app/src/main/java/com/baidu/tv/player/ui/` — 界面（main/filebrowser/playback/settings）
+  - `app/src/main/java/com/baidu/tv/player/effects/` — 9 种图片特效
+  - `app/src/main/java/com/baidu/tv/player/background/` — 3 种背景模式
+  - `app/src/main/java/com/baidu/tv/player/geocoding/` — 逆地理编码策略
+  - `app/src/main/java/com/baidu/tv/player/service/` — LocationExtractionService（独立进程）
+  - `app/src/main/java/com/baidu/tv/player/utils/` — 工具类
+
+  **关键文档**：
+  - Java 项目的 `功能分析.md`（完整功能分析，含 8 个用例场景、10 个功能模块、7 处文档差异订正）
+  - Java 项目的 `ARCHITECTURE.md`（部分过时，以源码为准）
+  - Java 项目的 `README.md`
+
+  **技术栈**：Kotlin 2.0.21 + AGP 8.7.3 + KSP + Media3 + FFmpeg + Hilt + Coroutines + Flow + Room + Retrofit + Glide
+  **目标设备**：Android TV（minSdk 28，Leanback），Amlogic S905X 等低端芯片
+  **构建规则**：Kotlin DSL (build.gradle.kts)，TDD 先行（红 → 绿 → 重构）
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
