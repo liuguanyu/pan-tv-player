@@ -3,6 +3,7 @@ package com.baidu.tv.player.kt.ui.settings
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.viewModels
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -18,7 +19,7 @@ import kotlinx.coroutines.launch
 /**
  * 设置页（对应 tasks.md 7.1）。
  *
- * TV 友好：每个设置项为可聚焦行，D-pad 上下导航、OK/中键点击循环切换值。
+ * TV 友好：每个设置项为可聚焦行，D-pad 上下导航，OK/中键打开带 RadioButton 的单选菜单。
  * 所有状态来自 [SettingsViewModel.uiState]，通过 repeatOnLifecycle(STARTED) 收集；
  * 一次性提示 / 地点识别测试结果通过 [SettingsViewModel.events] 收集。
  */
@@ -38,33 +39,25 @@ class SettingsActivity : FragmentActivity() {
     }
 
     private fun setupRows() {
-        binding.rowPlayMode.setOnClickListener {
-            viewModel.setPlayMode(nextPlayMode(viewModel.uiState.value.playMode))
-        }
-        binding.rowImageEffect.setOnClickListener {
-            viewModel.setImageEffect(nextImageEffect(viewModel.uiState.value.imageEffect))
-        }
-        binding.rowBackground.setOnClickListener {
-            viewModel.setBackgroundMode(nextBackgroundMode(viewModel.uiState.value.backgroundMode))
-        }
-        binding.rowDisplayDuration.setOnClickListener {
-            viewModel.setImageDisplayDurationMs(
-                nextDisplayDuration(viewModel.uiState.value.imageDisplayDurationMs),
-            )
-        }
-        binding.rowTransitionDuration.setOnClickListener {
-            viewModel.setImageTransitionDurationMs(
-                nextTransitionDuration(viewModel.uiState.value.imageTransitionDurationMs),
-            )
-        }
+        binding.rowPlayMode.setOnClickListener { showPlayModeMenu() }
+        binding.rowImageEffect.setOnClickListener { showImageEffectMenu() }
+        binding.rowBackground.setOnClickListener { showBackgroundModeMenu() }
+        binding.rowDisplayDuration.setOnClickListener { showDisplayDurationMenu() }
+        binding.rowTransitionDuration.setOnClickListener { showTransitionDurationMenu() }
         binding.rowShowLocation.setOnClickListener {
-            viewModel.setShowLocation(!viewModel.uiState.value.showLocation)
+            showBooleanMenu(getString(R.string.settings_show_location), viewModel.uiState.value.showLocation) {
+                viewModel.setShowLocation(it)
+            }
         }
         binding.rowShowCounter.setOnClickListener {
-            viewModel.setShowCounter(!viewModel.uiState.value.showCounter)
+            showBooleanMenu(getString(R.string.settings_show_counter), viewModel.uiState.value.showCounter) {
+                viewModel.setShowCounter(it)
+            }
         }
         binding.rowShowCaptureTime.setOnClickListener {
-            viewModel.setShowCaptureTime(!viewModel.uiState.value.showCaptureTime)
+            showBooleanMenu(getString(R.string.settings_show_capture_time), viewModel.uiState.value.showCaptureTime) {
+                viewModel.setShowCaptureTime(it)
+            }
         }
     }
 
@@ -115,31 +108,81 @@ class SettingsActivity : FragmentActivity() {
         }
     }
 
-    private fun nextPlayMode(current: PlayMode): PlayMode {
-        val values = PlayMode.entries
-        return values[(current.ordinal + 1) % values.size]
+    private fun showPlayModeMenu() {
+        val options = PlayMode.entries
+        showSingleChoiceMenu(
+            title = getString(R.string.settings_play_mode),
+            labels = options.map { it.displayName },
+            checkedIndex = options.indexOf(viewModel.uiState.value.playMode),
+        ) { viewModel.setPlayMode(options[it]) }
     }
 
-    private fun nextImageEffect(current: ImageEffect): ImageEffect {
-        val values = ImageEffect.entries
-        return values[(current.ordinal + 1) % values.size]
+    private fun showImageEffectMenu() {
+        // RANDOM 的持久化 value 保持不变，只调整菜单顺序，让「随机」位于全部具体动效之后。
+        val options = ImageEffect.entries.filterNot { it == ImageEffect.RANDOM } + ImageEffect.RANDOM
+        showSingleChoiceMenu(
+            title = getString(R.string.settings_image_effect),
+            labels = options.map { it.displayName },
+            checkedIndex = options.indexOf(viewModel.uiState.value.imageEffect),
+        ) { viewModel.setImageEffect(options[it]) }
     }
 
-    private fun nextBackgroundMode(current: ImageBackgroundMode): ImageBackgroundMode {
-        val values = ImageBackgroundMode.entries
-        return values[(current.ordinal + 1) % values.size]
+    private fun showBackgroundModeMenu() {
+        val options = ImageBackgroundMode.entries
+        showSingleChoiceMenu(
+            title = getString(R.string.settings_background_mode),
+            labels = options.map { it.displayName },
+            checkedIndex = options.indexOf(viewModel.uiState.value.backgroundMode),
+        ) { viewModel.setBackgroundMode(options[it]) }
     }
 
-    /** 幻灯片间隔在 [3s, 30s] 之间以 1s 步进循环。 */
-    private fun nextDisplayDuration(currentMs: Int): Int {
-        val next = currentMs + 1_000
-        return if (next > MAX_DISPLAY_MS) MIN_DISPLAY_MS else next
+    private fun showDisplayDurationMenu() {
+        val options = (MIN_DISPLAY_MS..MAX_DISPLAY_MS step 1_000).toList()
+        showSingleChoiceMenu(
+            title = getString(R.string.settings_display_duration),
+            labels = options.map { getString(R.string.settings_seconds_format, formatSeconds(it)) },
+            checkedIndex = options.indexOf(viewModel.uiState.value.imageDisplayDurationMs),
+        ) { viewModel.setImageDisplayDurationMs(options[it]) }
     }
 
-    /** 过渡时长在 [0s, 3s] 之间以 0.5s 步进循环。 */
-    private fun nextTransitionDuration(currentMs: Int): Int {
-        val next = currentMs + 500
-        return if (next > MAX_TRANSITION_MS) 0 else next
+    private fun showTransitionDurationMenu() {
+        val options = (0..MAX_TRANSITION_MS step 500).toList()
+        showSingleChoiceMenu(
+            title = getString(R.string.settings_transition_duration),
+            labels = options.map { getString(R.string.settings_seconds_format, formatSeconds(it)) },
+            checkedIndex = options.indexOf(viewModel.uiState.value.imageTransitionDurationMs),
+        ) { viewModel.setImageTransitionDurationMs(options[it]) }
+    }
+
+    private fun showBooleanMenu(title: String, current: Boolean, onSelected: (Boolean) -> Unit) {
+        val options = listOf(true, false)
+        showSingleChoiceMenu(
+            title = title,
+            labels = listOf(getString(R.string.settings_on), getString(R.string.settings_off)),
+            checkedIndex = options.indexOf(current),
+        ) { onSelected(options[it]) }
+    }
+
+    /** AlertDialog 的 single-choice 列表在每一项前显示 RadioButton，适合遥控器一次查看并选择。 */
+    private fun showSingleChoiceMenu(
+        title: String,
+        labels: List<String>,
+        checkedIndex: Int,
+        onSelected: (Int) -> Unit,
+    ) {
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(title)
+            .setSingleChoiceItems(labels.toTypedArray(), checkedIndex) { dialog, which ->
+                onSelected(which)
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.listView.requestFocus()
+            dialog.listView.setSelection(checkedIndex.coerceAtLeast(0))
+        }
+        dialog.show()
     }
 
     companion object {

@@ -119,6 +119,28 @@ class PlaybackViewModelTest {
     }
 
     @Test
+    fun initialize_reverseModeStartsFromLastItem() = runTest {
+        val reverseMode = MutableStateFlow(PlayMode.REVERSE)
+        every { settingsRepository.playMode } returns reverseMode
+        val files = listOf(
+            video("a.mp4", fsId = 1, dlink = "https://d/a"),
+            video("b.mp4", fsId = 2, dlink = "https://d/b"),
+            video("c.mp4", fsId = 3, dlink = "https://d/c"),
+        )
+        playlistCache.put("p", files)
+        val vm = viewModel()
+
+        vm.initialize("p", MediaType.VIDEO.code, "/movies", 0)
+        advanceUntilIdle()
+
+        assertEquals(2, vm.uiState.value.currentIndex)
+        assertEquals("c.mp4", vm.uiState.value.currentFile?.serverFilename)
+        vm.playNext()
+        advanceUntilIdle()
+        assertEquals(1, vm.uiState.value.currentIndex)
+    }
+
+    @Test
     fun preloadNextFile_usesMutexAndCachesDlink() = runTest {
         val files = listOf(video("a.mp4", fsId = 1, dlink = "https://d/a"), video("b.mp4", fsId = 2))
         playlistCache.put("p", files)

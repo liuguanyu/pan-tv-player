@@ -4,9 +4,7 @@ import android.content.Context
 import android.util.Log
 import android.view.Surface
 import androidx.media3.common.C
-import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -23,32 +21,14 @@ private const val TAG = "Media3Engine"
 private const val USER_AGENT = "BaiduTVPlayer-KT/1.0 (Android TV)"
 
 /**
- * 基于 Media3 ExoPlayer 的播放引擎实现（对应 tasks 6.3），是 [VideoPlayerEngine] 的唯一实现。
+ * 基于 Media3 ExoPlayer 的硬件优先播放引擎（对应 tasks 6.3）。
  *
- * 硬解优先 + 软解降级链（design.md Decision 2）：
- * ```
- * Media3 硬解 (MediaCodec) → 失败 → [FFmpeg 软解 预留插入点] → 编码检测预检 → 提示
- * ```
+ * [play] 通过 [VideoCodecInspector] 和 [PlaybackCapability] 判断设备是否声明了目标编码硬解器；
+ * 可硬解时直接播放，包括设备支持的 4K/Main10/Dolby Vision。Media3 启动或运行时失败后，
+ * 上层 [HybridVideoPlayerEngine] 负责切换到 LibVLC/FFmpeg 软解。
  *
- * ### 软硬解降级判定路径
- * 1. [play] 先调用 [VideoCodecInspector] 检测编码参数（[VideoCodecInfo]）。
- * 2. [PlaybackCapability.evaluate] 分级：
- *    - `DirectPlay` → 交给 ExoPlayer 硬解（[buildRenderersFactory] 已开启 `setEnableDecoderFallback`）。
- *    - `WarnAndPlay(reason)` → 返回 [PlaybackResult.Unsupported]，由 UI 弹分级对话框；用户确认后
- *      调用 [playForced] 强制以硬解尝试（4K/10-bit HEVC 仍走 MediaCodec）。
- *    - `Unsupported(reason)` → 返回 [PlaybackResult.Unsupported]（无硬解 + FFmpeg 未接入）。
- *
- * ### Dolby Vision 预检拦截
- * 部分片源为 Dolby Vision（`video/dolby-vision`，如 `hev1.08.04` = DV Profile 8）。
- * 多数 TV 设备无 DV/10-bit 硬解，MediaCodecVideoRenderer 初始化或渲染时会失败。
- * 当前未集成 FFmpeg 软解，因此 [play] 在检测到 DV 后直接返回 [PlaybackResult.Unsupported]，
- * 由 UI 提示并跳过，避免反复弹出底层 MediaCodec 错误。
- *
- * ### FFmpeg 软解未集成（design.md 实现期发现 2026-07-11）
- * `androidx.media3:media3-ffmpeg-decoder` 无 Maven 预构建产物，暂无法接入真实软解 .so。
- * [buildRenderersFactory] 中 `EXTENSION_RENDERER_MODE_ON` 已预留：一旦引入自编译/可信社区
- * FFmpeg 扩展，Media3 会自动在硬解失败时启用软解 renderer，无需改动本类调用方与降级判定。
- * 见 [FFMPEG_SOFT_DECODE_INSERTION_POINT]。
+ * [buildRenderersFactory] 同时开启 Media3 decoder fallback；扩展 renderer 插入点保留在
+ * [FFMPEG_SOFT_DECODE_INSERTION_POINT]，当前真正的通用软解兜底由 LibVLC 提供。
  */
 class Media3VideoPlayerEngine @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -94,13 +74,6 @@ class Media3VideoPlayerEngine @Inject constructor(
             listener?.onVideoSizeChanged(displayWidth, videoSize.height)
         }
 
-        override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
-            if (tracks.groups.any { group -> group.mediaTrackGroup.getFormat(0).isDolbyVisionFormat() }) {
-                Log.w(TAG, "检测到 Dolby Vision 轨道，停止播放以避免 MediaCodecVideoRenderer 错误")
-                stop()
-                listener?.onUnsupported(UnsupportedReason.DOLBY_VISION)
-            }
-        }
 
         override fun onPlayerError(error: PlaybackException) {
             Log.e(TAG, "ExoPlayer 错误: ${error.errorCodeName}", error)
@@ -132,10 +105,7 @@ class Media3VideoPlayerEngine @Inject constructor(
         }
     }
 
-    /**
-     * 用户在分级对话框确认后，强制以硬解尝试播放（用于 4K / 10-bit HEVC 等 WarnAndPlay 场景）。
-     * 跳过能力评估，直接交给 ExoPlayer + decoder fallback。
-     */
+    /** 跳过能力预检，直接交给 ExoPlayer + decoder fallback。混合引擎已完成统一评估时使用。 */
     suspend fun playForced(
         url: String,
         surface: Surface,
@@ -211,16 +181,6 @@ class Media3VideoPlayerEngine @Inject constructor(
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
             .setEnableDecoderFallback(true)
 
-    private fun Format.isDolbyVisionFormat(): Boolean =
-        sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION || codecs.isDolbyVisionCodecString()
-
-    private fun String?.isDolbyVisionCodecString(): Boolean {
-        val value = this?.lowercase() ?: return false
-        return value.startsWith("dvhe") ||
-            value.startsWith("dvh1") ||
-            value.startsWith("hev1.08") ||
-            value.startsWith("hvc1.08")
-    }
 
     override fun switchBackend(backend: VideoPlayerEngine.Backend) = Unit
 

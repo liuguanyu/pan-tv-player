@@ -38,8 +38,9 @@ class LibVlcVideoPlayerEngine @Inject constructor(
             arrayListOf(
                 "--network-caching=3000",
                 "--file-caching=1500",
-                "--no-drop-late-frames",
-                "--no-skip-frames",
+                // 软解兜底时允许丢弃来不及渲染的帧，避免 32 位 TV CPU 被 4K/Main10 拖垮后彻底卡死。
+                "--drop-late-frames",
+                "--skip-frames",
                 "--avcodec-hw=none",
             ),
         ).apply {

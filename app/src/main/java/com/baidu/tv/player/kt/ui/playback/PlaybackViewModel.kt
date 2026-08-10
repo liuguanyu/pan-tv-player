@@ -547,18 +547,18 @@ class PlaybackViewModel @Inject constructor(
     /**
      * 计算进入播放列表时的起始项。
      *
-     * - 随机模式（[PlayMode.RANDOM]）：忽略调用方给定的顺序起点，改用随机项开始，
-     *   使"进入列表即从第一个开始"这一顺序播放的行为不会误用于随机播放。
-     * - 其他模式：沿用 [preferredIndex]（如上次播放位置 / intent 传入的 startIndex）。
+     * - 随机模式（[PlayMode.RANDOM]）：忽略顺序起点，改用随机项开始。
+     * - 倒序模式（[PlayMode.REVERSE]）：普通入口默认从列表最后一项开始，再向前播放。
+     * - 其他模式：沿用 [preferredIndex]（如 intent 传入的 startIndex）。
      *
      * 直接读取 [SettingsRepository.playMode] 的 StateFlow 当前值，避免依赖尚未 collect 完成的 uiState.playMode。
      */
     private fun resolveStartIndex(size: Int, preferredIndex: Int): Int {
         if (size <= 1) return preferredIndex.coerceIn(0, maxOf(0, size - 1))
-        return if (settingsRepository.playMode.value == PlayMode.RANDOM) {
-            Random(System.nanoTime()).nextInt(size)
-        } else {
-            preferredIndex.coerceIn(0, size - 1)
+        return when (settingsRepository.playMode.value) {
+            PlayMode.RANDOM -> Random(System.nanoTime()).nextInt(size)
+            PlayMode.REVERSE -> size - 1
+            else -> preferredIndex.coerceIn(0, size - 1)
         }
     }
 

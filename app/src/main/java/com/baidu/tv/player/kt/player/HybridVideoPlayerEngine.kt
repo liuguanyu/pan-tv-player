@@ -12,16 +12,13 @@ import javax.inject.Inject
 private const val TAG = "HybridEngine"
 
 /**
- * 混合播放引擎：默认 Media3 硬解，遇到 Dolby Vision / 10-bit HEVC 等硬解风险格式时
- * 自动切换到 LibVLC（FFmpeg）软解兜底。
+ * 混合播放引擎：优先使用设备 MediaCodec 硬解，失败时自动切换到 LibVLC/FFmpeg 软解兜底。
  *
  * 兜底路径（三层）：
- * 1. **播放前预检**：[VideoCodecInspector] 检出 DV/10-bit → 直接选 LibVLC。
- * 2. **准备阶段**：预检漏判但 Media3 内部（如 onTracksChanged / capability 评估）返回
- *    [PlaybackResult.Unsupported] → 自动改用 LibVLC 重试。
- * 3. **运行时**：MediaCodec 渲染中途抛解码类错误（如 DV Profile 8 在无 DV 硬解设备上的
- *    `MediaCodec$CodecException: Error 0xe`）→ 拦截 [Media3VideoPlayerEngine.Listener.onError]，
- *    自动用 LibVLC 从当前进度续播，不再向 UI 透传错误。
+ * 1. **播放前预检**：设备没有对应硬解器，或同类编码此前已失败 → 直接选 LibVLC。
+ * 2. **准备阶段**：Media3 同步启动失败或返回 [PlaybackResult.Unsupported] → 用 LibVLC 重试。
+ * 3. **运行时**：MediaCodec 解码、音轨或容器解析失败 → 从当前进度切换 LibVLC；网络与鉴权
+ *    错误不切换，保留原始错误供 UI 提示。
  */
 class HybridVideoPlayerEngine @Inject constructor(
     private val media3Engine: Media3VideoPlayerEngine,
@@ -73,8 +70,11 @@ class HybridVideoPlayerEngine @Inject constructor(
         }
 
         override fun onError(error: PlaybackException) {
-            if (activeBackend == VideoPlayerEngine.Backend.MEDIA3 && isDecoderError(error)) {
-                Log.w(TAG, "Media3 解码失败（${error.errorCodeName}），自动降级 LibVLC 软解")
+            if (activeBackend == VideoPlayerEngine.Backend.MEDIA3 && shouldFailover(error)) {
+                Log.w(
+                    TAG,
+                    "Media3 播放失败（${error.errorCodeName}: ${error.message.orEmpty()}），自动降级 LibVLC",
+                )
                 failoverToLibVlc { listener?.onError(error) }
             } else {
                 listener?.onError(error)
@@ -112,9 +112,7 @@ class HybridVideoPlayerEngine @Inject constructor(
     }
 
     private fun selectBackend(info: VideoCodecInfo): VideoPlayerEngine.Backend =
-        if (info.isDolbyVision() || info.is10BitOrAbove()) {
-            VideoPlayerEngine.Backend.LIBVLC
-        } else if (capabilityCache.isMedia3KnownFailing(info)) {
+        if (capabilityCache.isMedia3KnownFailing(info)) {
             // 同类编码此前已在本设备上让 Media3 失败过（设备属性不变），直接软解。
             Log.i(TAG, "命中解码失败缓存（${info.mimeType}/${info.bitDepth}bit），直接使用 LibVLC")
             VideoPlayerEngine.Backend.LIBVLC
@@ -137,14 +135,20 @@ class HybridVideoPlayerEngine @Inject constructor(
             VideoPlayerEngine.Backend.MEDIA3 -> {
                 // 用 playForced 跳过 Media3 内部重复的编码检测（Hybrid 已 inspect + 评估过，
                 // 避免对同一 URL 连续两次 8s 超时探测导致起播极慢）。
-                val result = media3Engine.playForced(url, surface, headers)
-                if (result is PlaybackResult.Unsupported) {
-                    Log.w(TAG, "Media3 拒绝播放（${result.reason}），改用 LibVLC 软解")
-                    capabilityCache.markMedia3Failed(lastCodecInfo)
-                    failoverAttempted = true
-                    playWithBackend(VideoPlayerEngine.Backend.LIBVLC, url, surface, headers)
-                } else {
-                    result
+                when (val result = media3Engine.playForced(url, surface, headers)) {
+                    PlaybackResult.Success -> result
+                    is PlaybackResult.Unsupported -> {
+                        Log.w(TAG, "Media3 拒绝播放（${result.reason}），改用 LibVLC 软解")
+                        capabilityCache.markMedia3Failed(lastCodecInfo)
+                        failoverAttempted = true
+                        playWithBackend(VideoPlayerEngine.Backend.LIBVLC, url, surface, headers)
+                    }
+                    is PlaybackResult.Error -> {
+                        Log.w(TAG, "Media3 启动失败（${result.cause.message}），改用 LibVLC")
+                        capabilityCache.markMedia3Failed(lastCodecInfo)
+                        failoverAttempted = true
+                        playWithBackend(VideoPlayerEngine.Backend.LIBVLC, url, surface, headers)
+                    }
                 }
             }
 
@@ -196,8 +200,8 @@ class HybridVideoPlayerEngine @Inject constructor(
         }
     }
 
-    /** 是否为解码器相关错误（可通过软解兜底恢复）。 */
-    private fun isDecoderError(error: PlaybackException): Boolean {
+    /** 是否为 LibVLC 可兜底的本地播放栈错误；网络、超时和鉴权错误不重复请求。 */
+    private fun shouldFailover(error: PlaybackException): Boolean {
         when (error.errorCode) {
             PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
             PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
@@ -205,6 +209,10 @@ class HybridVideoPlayerEngine @Inject constructor(
             PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
             PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
             PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK,
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
+            PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED,
             -> return true
         }
         // errorCode 不在白名单时兜底检查 cause 链：MediaCodec 相关异常一律视为解码错误
@@ -225,7 +233,9 @@ class HybridVideoPlayerEngine @Inject constructor(
         // 此类错误同样可由 LibVLC/FFmpeg 软解恢复，不能透传给 UI 后直接跳过视频。
         val message = error.message.orEmpty()
         return message.contains("MediaCodecVideoRenderer error", ignoreCase = true) ||
-            message.contains("MediaCodecAudioRenderer error", ignoreCase = true)
+            message.contains("MediaCodecAudioRenderer error", ignoreCase = true) ||
+            message.contains("UnrecognizedInputFormat", ignoreCase = true) ||
+            message.contains("ParserException", ignoreCase = true)
     }
 
     override fun currentBackend(): VideoPlayerEngine.Backend = activeBackend

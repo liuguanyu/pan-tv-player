@@ -4,9 +4,9 @@ package com.baidu.tv.player.kt.player
  * 播放能力分级评估器（对应 tasks 6.5）。
  *
  * 依据 [VideoCodecInfo] 与设备硬解能力（[HardwareDecoderChecker]）评估该视频的播放策略：
- * - [Capability.DirectPlay]     H.264 或设备可硬解的编码，直接硬解播放。
- * - [Capability.WarnAndPlay]    4K HEVC / 10-bit HEVC，硬解可能不稳定，弹提示后仍可尝试播放。
- * - [Capability.Unsupported]    设备无硬解且无软解兜底（FFmpeg 未接入），提示无法播放。
+ * - [Capability.DirectPlay]     H.264 或设备声明可硬解的 HEVC/Dolby Vision，直接硬解播放。
+ * - [Capability.WarnAndPlay]    保留给需要用户确认的风险格式。
+ * - [Capability.Unsupported]    设备没有对应硬件解码器，交由混合引擎的 LibVLC 软解兜底。
  *
  * 纯逻辑类（无 Android 依赖），便于单测。UI 层据此弹出分级对话框（见 [PlaybackCapabilityDialog]）。
  */
@@ -28,33 +28,20 @@ class PlaybackCapability(
     /**
      * 评估给定编码信息的播放能力。
      *
-     * 判定顺序（与 design.md 分级一致）：
-     * 1. Dolby Vision：无 DV/10-bit 能力时 MediaCodec 易直接报错，且无软解兜底 → 不支持。
-     * 2. 非 HEVC（含检测失败/H.264/其他），交给硬解直接播放（Media3 自带 decoder fallback）。
-     * 3. HEVC 10-bit：无论分辨率，硬解在低端 Amlogic 上易花屏 → 警告。
-     * 4. HEVC 4K：解码压力大 → 警告。
-     * 5. HEVC 8-bit 1080p 及以下：若设备可硬解则直接播放；否则（无软解兜底）不支持。
+     * 判定原则：
+     * 1. 非 HEVC/Dolby Vision（含检测失败/H.264/其他）交给 Media3 直接播放。
+     * 2. HEVC/Dolby Vision 查询设备硬件解码器；存在则优先硬解，不因 4K/10-bit 标签预先强制软解。
+     * 3. 没有对应硬解器时返回 Unsupported，由 [HybridVideoPlayerEngine] 直接选择 LibVLC。
+     *
+     * 电视 SoC 的硬解单元通常能处理 4K Main10，而 CPU 纯软解反而容易失败；运行时硬解异常仍会
+     * 由混合引擎自动切换 LibVLC，因此这里应以设备实际声明能力为准。
      */
     fun evaluate(info: VideoCodecInfo): Capability {
-        if (info.isDolbyVision()) {
-            return Capability.Unsupported(UnsupportedReason.DOLBY_VISION)
-        }
-        if (!info.isHevc()) {
-            return Capability.DirectPlay
-        }
-        if (info.is10BitOrAbove()) {
-            return Capability.WarnAndPlay(UnsupportedReason.HEVC_10BIT)
-        }
-        if (info.is4kOrAbove()) {
-            return Capability.WarnAndPlay(UnsupportedReason.HEVC_4K)
-        }
-        // HEVC 8-bit，常规分辨率：依赖设备硬解能力。
-        return if (hardwareDecoderChecker.canDecodeHardware(info)) {
-            Capability.DirectPlay
-        } else {
-            // FFmpeg 软解未接入 → 无兜底。
-            Capability.Unsupported(UnsupportedReason.NO_HARDWARE_DECODER)
-        }
+        if (!info.isHevc() && !info.isDolbyVision()) return Capability.DirectPlay
+        if (hardwareDecoderChecker.canDecodeHardware(info)) return Capability.DirectPlay
+        return Capability.Unsupported(
+            if (info.isDolbyVision()) UnsupportedReason.DOLBY_VISION else UnsupportedReason.NO_HARDWARE_DECODER,
+        )
     }
 }
 

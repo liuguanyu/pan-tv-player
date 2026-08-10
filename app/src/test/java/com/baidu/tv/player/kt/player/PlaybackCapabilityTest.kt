@@ -26,30 +26,39 @@ class PlaybackCapabilityTest {
     }
 
     @Test
-    fun evaluate_dolbyVision_unsupported() {
+    fun evaluate_dolbyVisionWithHardware_directPlay() {
         val capability = PlaybackCapability { true }
 
-        val result = capability.evaluate(VideoCodecInfo(mimeType = "video/dolby-vision", width = 1920, height = 1080, bitDepth = 10))
+        val result = capability.evaluate(VideoCodecInfo(mimeType = "video/dolby-vision", width = 3840, height = 2160, bitDepth = 10))
+
+        assertEquals(PlaybackCapability.Capability.DirectPlay, result)
+    }
+
+    @Test
+    fun evaluate_dolbyVisionWithoutHardware_unsupported() {
+        val capability = PlaybackCapability { false }
+
+        val result = capability.evaluate(VideoCodecInfo(mimeType = "video/dolby-vision", width = 3840, height = 2160, bitDepth = 10))
 
         assertEquals(PlaybackCapability.Capability.Unsupported(UnsupportedReason.DOLBY_VISION), result)
     }
 
     @Test
-    fun evaluate_hevc10Bit_warnAndPlay() {
+    fun evaluate_hevc10BitWithHardware_directPlay() {
         val capability = PlaybackCapability { true }
 
         val result = capability.evaluate(VideoCodecInfo(mimeType = "video/hevc", width = 1920, height = 1080, bitDepth = 10))
 
-        assertEquals(PlaybackCapability.Capability.WarnAndPlay(UnsupportedReason.HEVC_10BIT), result)
+        assertEquals(PlaybackCapability.Capability.DirectPlay, result)
     }
 
     @Test
-    fun evaluate_hevc4k_warnAndPlay() {
+    fun evaluate_hevc4kWithHardware_directPlay() {
         val capability = PlaybackCapability { true }
 
         val result = capability.evaluate(VideoCodecInfo(mimeType = "video/hevc", width = 3840, height = 2160))
 
-        assertEquals(PlaybackCapability.Capability.WarnAndPlay(UnsupportedReason.HEVC_4K), result)
+        assertEquals(PlaybackCapability.Capability.DirectPlay, result)
     }
 
     @Test
