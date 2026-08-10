@@ -59,6 +59,7 @@ data class PlaybackUiState(
     val locationText: String? = null,
     val captureTimeText: String? = null,
     val showCounter: Boolean = true,
+    val showCaptureTime: Boolean = true,
     /** 当前播放上下文来源：数据库播放列表 id（可空）。用于写入文件级最近播放记录。 */
     val sourcePlaylistId: Long? = null,
     /** 当前播放上下文来源：云盘目录路径（可空）。用于写入文件级最近播放记录。 */
@@ -157,6 +158,11 @@ class PlaybackViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.showCounter.collect { enabled ->
                 _uiState.update { it.copy(showCounter = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.showCaptureTime.collect { enabled ->
+                _uiState.update { it.copy(showCaptureTime = enabled) }
             }
         }
     }

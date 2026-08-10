@@ -63,6 +63,9 @@ class SettingsActivity : FragmentActivity() {
         binding.rowShowCounter.setOnClickListener {
             viewModel.setShowCounter(!viewModel.uiState.value.showCounter)
         }
+        binding.rowShowCaptureTime.setOnClickListener {
+            viewModel.setShowCaptureTime(!viewModel.uiState.value.showCaptureTime)
+        }
     }
 
     private fun collectState() {
@@ -99,6 +102,8 @@ class SettingsActivity : FragmentActivity() {
             getString(if (state.showLocation) R.string.settings_on else R.string.settings_off)
         binding.valueShowCounter.text =
             getString(if (state.showCounter) R.string.settings_on else R.string.settings_off)
+        binding.valueShowCaptureTime.text =
+            getString(if (state.showCaptureTime) R.string.settings_on else R.string.settings_off)
     }
 
     private fun formatSeconds(ms: Int): String {

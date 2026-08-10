@@ -169,8 +169,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         } else {
             locationText.visibility = View.GONE
         }
-        // 拍摄时间：首帧渲染后、能从媒体元数据取到即在左上角展示。
-        if (state.contentReady && !state.captureTimeText.isNullOrBlank()) {
+        // 拍摄时间：首帧渲染后、开启"显示拍摄时间"且能从媒体元数据取到即在左上角展示。
+        if (state.contentReady && state.showCaptureTime && !state.captureTimeText.isNullOrBlank()) {
             captureTimeText.text = state.captureTimeText
             captureTimeText.visibility = View.VISIBLE
         } else {

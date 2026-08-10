@@ -54,6 +54,7 @@
     <string name="settings_transition_duration">过渡时长</string>
     <string name="settings_show_location">显示拍摄地点</string>
     <string name="settings_show_counter">显示播放计数器</string>
+    <string name="settings_show_capture_time">显示拍摄时间</string>
     <string name="settings_show_location_hint">地点仅从媒体元数据(EXIF/视频 metadata)解析，不获取设备定位、不申请位置权限。</string>
     <string name="settings_on">开启</string>
     <string name="settings_off">关闭</string>

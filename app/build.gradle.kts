@@ -81,6 +81,14 @@ android {
                 abiFilters += listOf("arm64-v8a", "armeabi-v7a")
             }
         }
+        // 纯 32 位包：Sony BRAVIA（Android 9，32 位用户态）专用，
+        // 去掉 arm64 原生库，安装体积减半，缓解电视存储不足导致的安装失败。
+        create("v7a") {
+            dimension = "abi"
+            ndk {
+                abiFilters += "armeabi-v7a"
+            }
+        }
     }
 
     buildTypes {

@@ -83,6 +83,16 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun setShowCaptureTime_updatesUiState() = runTest {
+        val vm = newViewModel()
+        vm.uiState.test {
+            awaitItem()
+            vm.setShowCaptureTime(false)
+            assertFalse(awaitItem().showCaptureTime)
+        }
+    }
+
+    @Test
     fun testLocationExtraction_emitsResultEvent() = runTest {
         coEvery { locationService.extractLocation(any(), any()) } returns "北京市"
         val vm = newViewModel()

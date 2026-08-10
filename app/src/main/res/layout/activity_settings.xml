@@ -118,6 +118,22 @@
                 tools:text="开启" />
         </LinearLayout>
 
+        <!-- 拍摄时间开关 -->
+        <LinearLayout
+            android:id="@+id/rowShowCaptureTime"
+            style="@style/SettingsRow"
+            android:focusable="true">
+
+            <TextView
+                style="@style/SettingsRowLabel"
+                android:text="@string/settings_show_capture_time" />
+
+            <TextView
+                android:id="@+id/valueShowCaptureTime"
+                style="@style/SettingsRowValue"
+                tools:text="开启" />
+        </LinearLayout>
+
         <!-- 播放计数器开关 -->
         <LinearLayout
             android:id="@+id/rowShowCounter"

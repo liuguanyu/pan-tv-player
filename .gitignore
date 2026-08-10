@@ -49,6 +49,9 @@ Thumbs.db
 # 旧式 APK 输出目录（output-metadata.json 等生成物）
 /app/debug/
 /app/release/
+/app/arm64/
+/app/compat/
+/app/v7a/
 
 # ============================================================================
 # R8 / ProGuard 混淆映射（release mapping，含符号信息，不入库）

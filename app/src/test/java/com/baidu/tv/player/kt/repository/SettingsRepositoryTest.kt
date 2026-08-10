@@ -82,4 +82,12 @@ class SettingsRepositoryTest {
         repo.setShowLocation(false)
         assertFalse(newRepository().showLocation.value)
     }
+
+    @Test
+    fun setShowCaptureTime_persists() {
+        val repo = newRepository()
+        assertTrue(repo.showCaptureTime.value)
+        repo.setShowCaptureTime(false)
+        assertFalse(newRepository().showCaptureTime.value)
+    }
 }

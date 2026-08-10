@@ -27,6 +27,7 @@ data class SettingsUiState(
     val imageTransitionDurationMs: Int = SettingsRepository.DEFAULT_IMAGE_TRANSITION_DURATION,
     val showLocation: Boolean = true,
     val showCounter: Boolean = true,
+    val showCaptureTime: Boolean = true,
 )
 
 /** 设置页一次性事件。 */
@@ -58,21 +59,33 @@ class SettingsViewModel @Inject constructor(
             settingsRepository.imageTransitionDurationMs,
             settingsRepository.showLocation,
             settingsRepository.showCounter,
-        ) { transition, showLocation, showCounter -> Triple(transition, showLocation, showCounter) },
-    ) { playMode, effect, background, display, (transition, showLocation, showCounter) ->
+            settingsRepository.showCaptureTime,
+        ) { transition, showLocation, showCounter, showCaptureTime ->
+            SecondarySettings(transition, showLocation, showCounter, showCaptureTime)
+        },
+    ) { playMode, effect, background, display, secondary ->
         SettingsUiState(
             playMode = playMode,
             imageEffect = effect,
             backgroundMode = background,
             imageDisplayDurationMs = display,
-            imageTransitionDurationMs = transition,
-            showLocation = showLocation,
-            showCounter = showCounter,
+            imageTransitionDurationMs = secondary.transitionMs,
+            showLocation = secondary.showLocation,
+            showCounter = secondary.showCounter,
+            showCaptureTime = secondary.showCaptureTime,
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = SettingsUiState(),
+    )
+
+    /** 内层 combine 的中间状态（kotlinx combine 单组最多 5 个流）。 */
+    private data class SecondarySettings(
+        val transitionMs: Int,
+        val showLocation: Boolean,
+        val showCounter: Boolean,
+        val showCaptureTime: Boolean,
     )
 
     private val _events = MutableSharedFlow<SettingsUiEvent>(extraBufferCapacity = 1)
@@ -93,6 +106,8 @@ class SettingsViewModel @Inject constructor(
     fun setShowLocation(show: Boolean) = settingsRepository.setShowLocation(show)
 
     fun setShowCounter(show: Boolean) = settingsRepository.setShowCounter(show)
+
+    fun setShowCaptureTime(show: Boolean) = settingsRepository.setShowCaptureTime(show)
 
     /**
      * 地点识别测试入口（tasks.md 7.4）：给定媒体 URL 尝试解析地址并通过事件回传。

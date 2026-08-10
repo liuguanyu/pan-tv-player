@@ -51,6 +51,9 @@ class SettingsRepository @Inject constructor(
     private val _showCounter = MutableStateFlow(readShowCounter())
     val showCounter: StateFlow<Boolean> = _showCounter.asStateFlow()
 
+    private val _showCaptureTime = MutableStateFlow(readShowCaptureTime())
+    val showCaptureTime: StateFlow<Boolean> = _showCaptureTime.asStateFlow()
+
     // ========== 播放模式 ==========
 
     fun setPlayMode(mode: PlayMode) {
@@ -123,6 +126,16 @@ class SettingsRepository @Inject constructor(
     private fun readShowCounter(): Boolean =
         prefs.getBoolean(KEY_SHOW_COUNTER, DEFAULT_SHOW_COUNTER)
 
+    // ========== 是否显示拍摄时间 ==========
+
+    fun setShowCaptureTime(show: Boolean) {
+        prefs.edit { putBoolean(KEY_SHOW_CAPTURE_TIME, show) }
+        _showCaptureTime.value = show
+    }
+
+    private fun readShowCaptureTime(): Boolean =
+        prefs.getBoolean(KEY_SHOW_CAPTURE_TIME, DEFAULT_SHOW_CAPTURE_TIME)
+
     companion object {
         /** Hilt Named 限定符：设置专用 SharedPreferences。 */
         const val PREFS_QUALIFIER = "settings_prefs"
@@ -135,6 +148,7 @@ class SettingsRepository @Inject constructor(
         const val KEY_IMAGE_TRANSITION_DURATION = "image_transition_duration"
         const val KEY_SHOW_LOCATION = "show_location"
         const val KEY_SHOW_COUNTER = "show_counter"
+        const val KEY_SHOW_CAPTURE_TIME = "show_capture_time"
         const val KEY_PLAY_MODE = "play_mode"
         const val KEY_BACKGROUND_MODE = "background_mode"
 
@@ -143,6 +157,7 @@ class SettingsRepository @Inject constructor(
         const val DEFAULT_IMAGE_TRANSITION_DURATION = 1_000 // 1 秒
         const val DEFAULT_SHOW_LOCATION = true
         const val DEFAULT_SHOW_COUNTER = true
+        const val DEFAULT_SHOW_CAPTURE_TIME = true
         const val DEFAULT_PLAY_MODE = 0 // 顺序播放
         const val DEFAULT_BACKGROUND_MODE = 1 // 主色调背景
 

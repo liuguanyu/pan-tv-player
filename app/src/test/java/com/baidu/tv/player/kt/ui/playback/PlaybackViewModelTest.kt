@@ -65,6 +65,7 @@ class PlaybackViewModelTest {
         every { settingsRepository.imageTransitionDurationMs } returns MutableStateFlow(1_000)
         every { settingsRepository.showLocation } returns MutableStateFlow(true)
         every { settingsRepository.showCounter } returns MutableStateFlow(true)
+        every { settingsRepository.showCaptureTime } returns MutableStateFlow(true)
         coEvery { locationExtractionService.extractLocation(any(), any()) } returns null
         coEvery { locationExtractionService.extractCaptureTime(any(), any()) } returns null
         every { authService.getAccessToken() } returns "token"
