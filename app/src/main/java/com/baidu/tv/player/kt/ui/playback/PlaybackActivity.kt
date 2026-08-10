@@ -591,17 +591,19 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
      * 裸 SurfaceView 会把画面拉伸铺满自身，需据此把 SurfaceView 缩放到容器内的正确比例，
      * 横屏视频占满水平边、竖屏视频占满垂直边。回调可能在非主线程，切回主线程更新布局。
      */
-    override fun onVideoSizeChanged(width: Int, height: Int) {
+    override fun onVideoSizeChanged(width: Int, height: Int, rotationDegrees: Int) {
         if (width <= 0 || height <= 0) return
         runOnUiThread {
-            currentVideoWidth = width
-            currentVideoHeight = height
-            resizeVideoSurface(width, height)
+            val quarterTurn = rotationDegrees == 90 || rotationDegrees == 270
+            currentVideoWidth = if (quarterTurn) height else width
+            currentVideoHeight = if (quarterTurn) width else height
+            resizeVideoSurface(width, height, rotationDegrees)
             if (infoVisible) renderInfoPanel(viewModel.uiState.value)
         }
     }
 
     private fun resetVideoSurfaceToFill() {
+        binding.videoSurface.rotation = 0f
         val params = binding.videoSurface.layoutParams as? android.widget.FrameLayout.LayoutParams ?: return
         params.width = android.view.ViewGroup.LayoutParams.MATCH_PARENT
         params.height = android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -609,30 +611,31 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         binding.videoSurface.layoutParams = params
     }
 
-    private fun resizeVideoSurface(videoWidth: Int, videoHeight: Int) {
+    private fun resizeVideoSurface(videoWidth: Int, videoHeight: Int, rotationDegrees: Int) {
         val container = binding.playbackRoot
         val containerWidth = container.width
         val containerHeight = container.height
         if (containerWidth == 0 || containerHeight == 0) return
-        val videoRatio = videoWidth.toFloat() / videoHeight
+        val normalizedRotation = ((rotationDegrees % 360) + 360) % 360
+        val quarterTurn = normalizedRotation == 90 || normalizedRotation == 270
+        val visualWidth = if (quarterTurn) videoHeight else videoWidth
+        val visualHeight = if (quarterTurn) videoWidth else videoHeight
+        val videoRatio = visualWidth.toFloat() / visualHeight
         val containerRatio = containerWidth.toFloat() / containerHeight
-        val (targetWidth, targetHeight) = if (videoRatio > containerRatio) {
-            // 视频更"宽"：占满水平边，高度按比例缩小（横屏典型）。
+        val (targetVisualWidth, targetVisualHeight) = if (videoRatio > containerRatio) {
             containerWidth to (containerWidth / videoRatio).toInt()
         } else {
-            // 视频更"高"：占满垂直边，宽度按比例缩小（竖屏典型）。
             (containerHeight * videoRatio).toInt() to containerHeight
         }
+        // SurfaceView 旋转 90/270° 后视觉包围盒宽高会交换，因此布局尺寸需要反向设置。
+        val targetLayoutWidth = if (quarterTurn) targetVisualHeight else targetVisualWidth
+        val targetLayoutHeight = if (quarterTurn) targetVisualWidth else targetVisualHeight
         val params = binding.videoSurface.layoutParams as? android.widget.FrameLayout.LayoutParams ?: return
-        val needsUpdate = params.width != targetWidth ||
-            params.height != targetHeight ||
-            params.gravity != android.view.Gravity.CENTER
-        if (!needsUpdate) return
-        params.width = targetWidth
-        params.height = targetHeight
-        // 必须与尺寸在同一次 LayoutParams 更新中设置；否则尺寸相同的回调会提前返回并保留左上对齐。
+        params.width = targetLayoutWidth
+        params.height = targetLayoutHeight
         params.gravity = android.view.Gravity.CENTER
         binding.videoSurface.layoutParams = params
+        binding.videoSurface.rotation = normalizedRotation.toFloat()
     }
 
     override fun onEnded() {

@@ -53,7 +53,7 @@ class Media3VideoPlayerEngine @Inject constructor(
          * 裸 SurfaceView 渲染时解码器会把画面拉伸铺满 Surface，
          * UI 层需据此把 SurfaceView 调整为正确宽高比（fit-center）。
          */
-        fun onVideoSizeChanged(width: Int, height: Int) {}
+        fun onVideoSizeChanged(width: Int, height: Int, rotationDegrees: Int = 0) {}
     }
 
     private val playerListener = object : Player.Listener {
@@ -71,7 +71,11 @@ class Media3VideoPlayerEngine @Inject constructor(
         override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
             if (videoSize.width <= 0 || videoSize.height <= 0) return
             val displayWidth = (videoSize.width * videoSize.pixelWidthHeightRatio).toInt()
-            listener?.onVideoSizeChanged(displayWidth, videoSize.height)
+            listener?.onVideoSizeChanged(
+                displayWidth,
+                videoSize.height,
+                normalizeRotation(videoSize.unappliedRotationDegrees),
+            )
         }
 
 
@@ -219,6 +223,9 @@ class Media3VideoPlayerEngine @Inject constructor(
     }
 
     companion object {
+        internal fun normalizeRotation(rotationDegrees: Int): Int =
+            ((rotationDegrees % 360) + 360) % 360
+
         /**
          * FFmpeg 软解接入点标记（design.md Decision 2）。
          * 当前 `media3-ffmpeg-decoder` 无 Maven 产物；接入自编译扩展后，

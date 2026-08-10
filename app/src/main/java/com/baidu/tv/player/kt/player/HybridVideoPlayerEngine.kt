@@ -65,8 +65,8 @@ class HybridVideoPlayerEngine @Inject constructor(
             listener?.onIsPlayingChanged(isPlaying)
         }
 
-        override fun onVideoSizeChanged(width: Int, height: Int) {
-            listener?.onVideoSizeChanged(width, height)
+        override fun onVideoSizeChanged(width: Int, height: Int, rotationDegrees: Int) {
+            listener?.onVideoSizeChanged(width, height, rotationDegrees)
         }
 
         override fun onError(error: PlaybackException) {
