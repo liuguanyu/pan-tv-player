@@ -65,8 +65,8 @@ class HybridVideoPlayerEngine @Inject constructor(
             listener?.onIsPlayingChanged(isPlaying)
         }
 
-        override fun onVideoSizeChanged(width: Int, height: Int, rotationDegrees: Int) {
-            listener?.onVideoSizeChanged(width, height, rotationDegrees)
+        override fun onVideoSizeChanged(width: Int, height: Int) {
+            listener?.onVideoSizeChanged(width, height)
         }
 
         override fun onError(error: PlaybackException) {
@@ -256,7 +256,8 @@ class HybridVideoPlayerEngine @Inject constructor(
     }
 
     override fun setVideoSurfaceView(surfaceView: android.view.SurfaceView) {
-        // LibVLC 需要 SurfaceView 引用以走官方 setVideoView 路径（Media3 只用 Surface）。
+        // 两个引擎都绑定同一个 SurfaceView，切换后仍能跟踪 SurfaceHolder 尺寸与生命周期。
+        media3Engine.setVideoSurfaceView(surfaceView)
         libVlcEngine.setVideoSurfaceView(surfaceView)
     }
 

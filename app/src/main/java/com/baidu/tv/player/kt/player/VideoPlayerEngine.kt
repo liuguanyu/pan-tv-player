@@ -49,10 +49,8 @@ interface VideoPlayerEngine {
     /**
      * 提供渲染目标 [android.view.SurfaceView]（可选）。
      *
-     * LibVLC 用 `IVLCVout.setVideoView(SurfaceView)` 绑定视图（官方推荐路径）：
-     * 由 VLC 管理 SurfaceHolder 回调、缓冲格式与窗口尺寸，比裸 Surface 直连可靠
-     * （裸 Surface 在 SurfaceView 场景下可能出现帧已渲染但不被合成的黑屏问题）。
-     * Media3 只需 Surface，默认实现为空操作。
+     * LibVLC 用 `IVLCVout.setVideoView(SurfaceView)`，Media3 用 `setVideoSurfaceView(SurfaceView)`；
+     * 两者都由播放器跟踪 SurfaceHolder 的尺寸变化与重建，比一次性绑定裸 Surface 更可靠。
      */
     fun setVideoSurfaceView(surfaceView: android.view.SurfaceView) {}
 

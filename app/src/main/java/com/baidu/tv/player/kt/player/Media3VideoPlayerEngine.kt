@@ -3,6 +3,7 @@ package com.baidu.tv.player.kt.player
 import android.content.Context
 import android.util.Log
 import android.view.Surface
+import android.view.SurfaceView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -37,6 +38,7 @@ class Media3VideoPlayerEngine @Inject constructor(
 ) : VideoPlayerEngine {
 
     private var exoPlayer: ExoPlayer? = null
+    private var videoSurfaceView: SurfaceView? = null
 
     /** 播放状态回调（可选）。由 Activity 注入以驱动 UI（进度/缓冲/结束）。 */
     var listener: Listener? = null
@@ -53,7 +55,7 @@ class Media3VideoPlayerEngine @Inject constructor(
          * 裸 SurfaceView 渲染时解码器会把画面拉伸铺满 Surface，
          * UI 层需据此把 SurfaceView 调整为正确宽高比（fit-center）。
          */
-        fun onVideoSizeChanged(width: Int, height: Int, rotationDegrees: Int = 0) {}
+        fun onVideoSizeChanged(width: Int, height: Int) {}
     }
 
     private val playerListener = object : Player.Listener {
@@ -71,11 +73,9 @@ class Media3VideoPlayerEngine @Inject constructor(
         override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
             if (videoSize.width <= 0 || videoSize.height <= 0) return
             val displayWidth = (videoSize.width * videoSize.pixelWidthHeightRatio).toInt()
-            listener?.onVideoSizeChanged(
-                displayWidth,
-                videoSize.height,
-                normalizeRotation(videoSize.unappliedRotationDegrees),
-            )
+            // API 21+ 旋转由 Media3/MediaCodec 内部应用，VideoSize 已是实际显示方向；
+            // 此处只应用像素宽高比（SAR），不能再次交换宽高或旋转 SurfaceView。
+            listener?.onVideoSizeChanged(displayWidth, videoSize.height)
         }
 
 
@@ -143,7 +143,14 @@ class Media3VideoPlayerEngine @Inject constructor(
             .apply { if (headers.isNotEmpty()) setDefaultRequestProperties(headers) }
         val mediaItem = MediaItem.fromUri(url)
         val mediaSource = DefaultMediaSourceFactory(httpFactory).createMediaSource(mediaItem)
-        player.setVideoSurface(surface)
+        val surfaceView = videoSurfaceView
+        if (surfaceView != null) {
+            // 绑定 SurfaceView 而不是一次性的裸 Surface，让 ExoPlayer 跟踪 SurfaceHolder 的
+            // 尺寸变化与重建；Activity 做 fit-center 调整后，硬解输出尺寸才能同步更新。
+            player.setVideoSurfaceView(surfaceView)
+        } else {
+            player.setVideoSurface(surface)
+        }
         if (startPositionMs > 0) {
             player.setMediaSource(mediaSource, startPositionMs)
         } else {
@@ -188,6 +195,10 @@ class Media3VideoPlayerEngine @Inject constructor(
 
     override fun switchBackend(backend: VideoPlayerEngine.Backend) = Unit
 
+    override fun setVideoSurfaceView(surfaceView: SurfaceView) {
+        videoSurfaceView = surfaceView
+    }
+
     override fun resume() {
         exoPlayer?.play()
     }
@@ -223,9 +234,6 @@ class Media3VideoPlayerEngine @Inject constructor(
     }
 
     companion object {
-        internal fun normalizeRotation(rotationDegrees: Int): Int =
-            ((rotationDegrees % 360) + 360) % 360
-
         /**
          * FFmpeg 软解接入点标记（design.md Decision 2）。
          * 当前 `media3-ffmpeg-decoder` 无 Maven 产物；接入自编译扩展后，
