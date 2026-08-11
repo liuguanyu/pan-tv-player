@@ -116,6 +116,7 @@ class PlaybackViewModel @Inject constructor(
     private val preloadMutex = Mutex()
     private var preloadJob: Job? = null
     private var locationJob: Job? = null
+    private var imageAutoNextJob: Job? = null
     private var randomQueue = ArrayDeque<Int>()
 
     init {
@@ -143,6 +144,9 @@ class PlaybackViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.imageDisplayDurationMs.collect { ms ->
                 _uiState.update { it.copy(imageDisplayDurationMs = ms.toLong()) }
+                if (_uiState.value.isCurrentImage && _uiState.value.isPlaying && _uiState.value.contentReady) {
+                    scheduleImageAutoNext()
+                }
             }
         }
         viewModelScope.launch {
@@ -475,7 +479,8 @@ class PlaybackViewModel @Inject constructor(
     }
 
     private fun scheduleImageAutoNext() {
-        viewModelScope.launch {
+        imageAutoNextJob?.cancel()
+        imageAutoNextJob = viewModelScope.launch {
             delay(_uiState.value.imageDisplayDurationMs)
             if (_uiState.value.isCurrentImage && _uiState.value.isPlaying) {
                 playNext()

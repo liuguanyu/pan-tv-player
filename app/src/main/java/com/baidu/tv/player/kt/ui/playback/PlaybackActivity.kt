@@ -86,6 +86,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     private var fatalErrorShown = false
     private var resumePlaybackOnReturn = false
     private var videoOutputSurface: Surface? = null
+    private var currentImageBitmap: Bitmap? = null
+    private var lastPresentationState: Pair<Int, String>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -206,6 +208,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
             decoderBadge.visibility = View.GONE
         }
         if (infoVisible) renderInfoPanel(state)
+        refreshPresentationIfNeeded(state)
         // 初始化失败（如播放列表为空）时事件可能在订阅前已丢失，这里按状态兜底提示并退出。
         if (!state.hasPlaylist && !state.isLoading && state.errorMessage != null && !fatalErrorShown) {
             fatalErrorShown = true
@@ -328,6 +331,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
                 object : BitmapImageViewTarget(binding.imageDisplay) {
                     override fun onResourceReady(resource: Bitmap, transition: Transition<in Bitmap>?) {
                         super.onResourceReady(resource, transition)
+                        currentImageBitmap = resource
                         applyImagePresentation(resource)
                         saveThumbnail(file, resource)
                         // 图片已真正渲染：此刻才显示三个角信息并开始自动切换计时。
@@ -386,10 +390,30 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
 
     private fun applyImagePresentation(bitmap: Bitmap) {
         val state = viewModel.uiState.value
+        lastPresentationState = state.imageBackgroundMode to state.imageEffect.name
         lifecycleScope.launch {
             ImageBackgroundFactory.fromValue(state.imageBackgroundMode)
                 .apply(binding.imageBackground, bitmap)
             ImageEffectFactory.resolve(state.imageEffect).apply(binding.imageDisplay)
+        }
+    }
+
+    /** 设置页返回后立即把新背景/特效应用到当前仍在显示的媒体，不必切换到下一项。 */
+    private fun refreshPresentationIfNeeded(state: PlaybackUiState) {
+        val presentationState = state.imageBackgroundMode to state.imageEffect.name
+        if (presentationState == lastPresentationState) return
+        when {
+            state.isCurrentImage -> currentImageBitmap?.let { applyImagePresentation(it) }
+            state.isCurrentVideo -> {
+                val frame = binding.videoSurface.bitmap
+                if (frame != null) {
+                    lastPresentationState = presentationState
+                    lifecycleScope.launch {
+                        ImageBackgroundFactory.fromValue(state.imageBackgroundMode)
+                            .apply(binding.imageBackground, frame)
+                    }
+                }
+            }
         }
     }
 
@@ -801,6 +825,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         super.onResume()
         hideSystemBars()
         val state = viewModel.uiState.value
+        refreshPresentationIfNeeded(state)
         if (resumePlaybackOnReturn && state.isCurrentVideo && state.contentReady) {
             videoPlayerEngine.resume()
         }
