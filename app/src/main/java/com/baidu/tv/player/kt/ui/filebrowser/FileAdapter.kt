@@ -73,7 +73,10 @@ class FileAdapter : RecyclerView.Adapter<FileViewHolder>() {
         holder.itemView.setOnClickListener { onItemClick?.invoke(file, holder.bindingAdapterPosition) }
         holder.itemView.setOnLongClickListener { onItemLongClick?.invoke(file, holder.bindingAdapterPosition) ?: false }
         holder.itemView.setOnKeyListener { _, keyCode, event ->
-            if (event.action == android.view.KeyEvent.ACTION_DOWN && keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT) {
+            if (!isGridMode &&
+                event.action == android.view.KeyEvent.ACTION_DOWN &&
+                keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+            ) {
                 onItemNavigateLeft?.invoke() ?: false
             } else {
                 false
