@@ -5,7 +5,7 @@ import android.net.Uri
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Surface
-import android.view.SurfaceView
+import android.view.TextureView
 import androidx.media3.common.PlaybackException
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +51,7 @@ class LibVlcVideoPlayerEngine @Inject constructor(
 
     private var mediaPlayer: MediaPlayer? = null
     private var attachedSurface: Surface? = null
-    private var videoView: SurfaceView? = null
+    private var videoView: TextureView? = null
     private var knownDurationMs: Long = 0L
     private var surfaceWidth: Int = 0
     private var surfaceHeight: Int = 0
@@ -77,14 +77,11 @@ class LibVlcVideoPlayerEngine @Inject constructor(
     }
 
     /**
-     * 绑定渲染 [SurfaceView]（LibVLC 官方推荐路径）。
-     *
-     * 与裸 Surface 直连相比，`IVLCVout.setVideoView()` 让 VLC 自己管理 SurfaceHolder
-     * 回调与像素格式协商，可避免"帧已解码渲染但 SurfaceFlinger 不合成"的黑屏问题
-     * （症状：黑屏但退出瞬间闪现一帧画面）。
+     * 绑定渲染 [TextureView]。TextureView 可在 Sony Android 9 上安全旋转，避免
+     * 旋转 SurfaceView 后出现“有声音但黑屏”。
      */
-    override fun setVideoSurfaceView(surfaceView: SurfaceView) {
-        videoView = surfaceView
+    override fun setVideoTextureView(textureView: TextureView) {
+        videoView = textureView
     }
 
     override suspend fun play(
@@ -143,7 +140,7 @@ class LibVlcVideoPlayerEngine @Inject constructor(
         }
         val view = videoView
         if (view != null) {
-            // 官方推荐：交给 VLC 管理 SurfaceView（holder 回调 / 像素格式 / 合成时机）。
+            // 交给 VLC 管理 TextureView 的 SurfaceTexture 生命周期与输出合成。
             player.vlcVout.setVideoView(view)
         } else {
             player.vlcVout.setVideoSurface(surface, null)
@@ -151,7 +148,7 @@ class LibVlcVideoPlayerEngine @Inject constructor(
         val (windowWidth, windowHeight) = resolveWindowSize()
         player.vlcVout.setWindowSize(windowWidth, windowHeight)
         // onNewVideoLayout：拿到真实视频尺寸与像素宽高比（SAR），上报给 UI 层
-        // 调整 SurfaceView 为正确比例（裸 Surface 渲染会被拉伸铺满，导致比例失真）。
+        // 调整 TextureView 为正确比例，避免输出被拉伸导致比例失真。
         player.vlcVout.attachViews { _, width, height, visibleWidth, visibleHeight, sarNum, sarDen ->
             val vw = if (visibleWidth > 0) visibleWidth else width
             val vh = if (visibleHeight > 0) visibleHeight else height
@@ -175,7 +172,7 @@ class LibVlcVideoPlayerEngine @Inject constructor(
         player.play()
     }
 
-    /** 未显式传入尺寸时退化为屏幕分辨率（TV 全屏播放场景下与 SurfaceView 一致）。 */
+    /** 未显式传入尺寸时退化为屏幕分辨率（TV 全屏播放场景）。 */
     private fun resolveWindowSize(): Pair<Int, Int> {
         if (surfaceWidth > 0 && surfaceHeight > 0) return surfaceWidth to surfaceHeight
         val metrics: DisplayMetrics = context.resources.displayMetrics

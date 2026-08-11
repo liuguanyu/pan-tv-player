@@ -80,4 +80,11 @@ class FakeBaiduPanService : BaiduPanService {
         fileInfoError?.let { throw it }
         return fileInfoResponse ?: FileListResponse()
     }
+
+    override suspend fun getFileInfoWithThumbs(
+        method: String, fsids: String, thumb: Int, accessToken: String,
+    ): FileListResponse {
+        fileInfoError?.let { throw it }
+        return fileInfoResponse ?: FileListResponse()
+    }
 }

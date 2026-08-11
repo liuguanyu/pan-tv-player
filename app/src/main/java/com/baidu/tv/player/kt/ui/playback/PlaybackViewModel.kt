@@ -344,6 +344,11 @@ class PlaybackViewModel @Inject constructor(
         switchToIndex(prevIndex)
     }
 
+    /** 从指定索引开始播放，后续按当前播放模式继续。适用于快速选播列表/跳播。 */
+    fun playFromIndex(index: Int) {
+        switchToIndex(index)
+    }
+
     fun cyclePlayMode() {
         val next = when (_uiState.value.playMode) {
             PlayMode.SEQUENTIAL -> PlayMode.RANDOM
@@ -575,9 +580,10 @@ class PlaybackViewModel @Inject constructor(
         val mediaType = if (file.isVideo()) MediaType.VIDEO.code else MediaType.IMAGE.code
         // 数据库播放列表项不保存 thumbs，但获取 dlink 的 filemetas 接口会返回完整文件详情。
         // 优先使用原始列表缩略图，再使用详情缩略图，并按清晰度 URL 逐级兜底。
+        // 注意：视频文件的 thumbs.urlX 可能是文件下载链接（含 /file/），需跳过。
         val thumbs = file.thumbs ?: fileDetailCache[file.fsId]?.thumbs
-        val cover = sequenceOf(thumbs?.url1, thumbs?.url2, thumbs?.url3, thumbs?.icon)
-            .firstOrNull { !it.isNullOrBlank() }
+        val cover = sequenceOf(thumbs?.icon, thumbs?.url1, thumbs?.url2, thumbs?.url3)
+            .firstOrNull { url -> !url.isNullOrBlank() && !url.contains("/file/") }
         historyRepository.insert(
             PlaybackHistory(
                 folderPath = filePath,

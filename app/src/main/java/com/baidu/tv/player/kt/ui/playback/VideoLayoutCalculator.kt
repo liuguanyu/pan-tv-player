@@ -8,9 +8,9 @@ internal object VideoLayoutCalculator {
     data class Size(val width: Int, val height: Int)
 
     data class Layout(
-        /** SurfaceView 旋转后的视觉尺寸。 */
+        /** 视频输出 View 旋转后的视觉尺寸。 */
         val visualSize: Size,
-        /** 旋转前应设置给 SurfaceView 的布局尺寸。 */
+        /** 旋转前应设置给视频输出 View 的布局尺寸。 */
         val surfaceSize: Size,
     )
 

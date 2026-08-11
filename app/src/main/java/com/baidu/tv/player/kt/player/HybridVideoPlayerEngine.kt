@@ -255,10 +255,10 @@ class HybridVideoPlayerEngine @Inject constructor(
         libVlcEngine.setVideoSurfaceSize(width, height)
     }
 
-    override fun setVideoSurfaceView(surfaceView: android.view.SurfaceView) {
-        // 两个引擎都绑定同一个 SurfaceView，切换后仍能跟踪 SurfaceHolder 尺寸与生命周期。
-        media3Engine.setVideoSurfaceView(surfaceView)
-        libVlcEngine.setVideoSurfaceView(surfaceView)
+    override fun setVideoTextureView(textureView: android.view.TextureView) {
+        // 两个引擎绑定同一个 TextureView，运行时降级后仍使用相同输出目标和旋转变换。
+        media3Engine.setVideoTextureView(textureView)
+        libVlcEngine.setVideoTextureView(textureView)
     }
 
     override fun resume() = activeEngine().resume()

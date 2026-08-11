@@ -65,7 +65,7 @@ class RecentTaskAdapter(
             } else {
                 binding.tvLastPlayTime.visibility = View.GONE
             }
-            if (!history.coverImagePath.isNullOrEmpty()) {
+            if (!history.coverImagePath.isNullOrEmpty() && !history.coverImagePath.contains("/file/")) {
                 val cover = if (history.coverImagePath.startsWith("http", ignoreCase = true)) {
                     val coverUri = Uri.parse(history.coverImagePath)
                     val host = coverUri.host.orEmpty().lowercase()

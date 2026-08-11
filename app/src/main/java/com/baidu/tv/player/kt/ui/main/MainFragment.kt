@@ -36,7 +36,7 @@ class MainFragment : Fragment() {
     @Inject lateinit var authService: BaiduAuthService
 
     private val viewModel: MainViewModel by viewModels()
-    private val playlistAdapter = PlaylistAdapter()
+    private val playlistAdapter = PlaylistAdapter { authService.getAccessToken() }
     private val recentTaskAdapter = RecentTaskAdapter { authService.getAccessToken() }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {

@@ -3,13 +3,13 @@ package com.baidu.tv.player.kt.ui.playback
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
-import android.os.Build
+
 import android.os.Bundle
 import android.view.KeyEvent
-import android.view.PixelCopy
+
 import android.view.Surface
 import android.util.Log
-import android.view.SurfaceView
+
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -30,6 +30,9 @@ import com.baidu.tv.player.kt.player.Media3VideoPlayerEngine
 import com.baidu.tv.player.kt.player.PlaybackResult
 import com.baidu.tv.player.kt.player.UnsupportedReason
 import com.baidu.tv.player.kt.player.VideoPlayerEngine
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.baidu.tv.player.kt.auth.BaiduAuthService
+import com.baidu.tv.player.kt.repository.FileRepository
 import com.baidu.tv.player.kt.ui.playback.image.ImageBackgroundFactory
 import com.baidu.tv.player.kt.ui.playback.image.ImageEffectFactory
 import com.baidu.tv.player.kt.ui.settings.SettingsActivity
@@ -54,7 +57,6 @@ private const val PROGRESS_INTERVAL_MS = 1_000L
 private const val THUMBNAIL_CAPTURE_RETRIES = 5
 private const val THUMBNAIL_CAPTURE_DELAY_MS = 800L
 private const val TAG = "PlaybackActivity"
-private const val SONY_OUTPUT_ROTATION_DEGREES = 90
 
 /**
  * 播放页（Phase 5）：Media3 视频播放 + 图片播放/特效/背景。
@@ -68,24 +70,28 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     private val viewModel: PlaybackViewModel by viewModels()
 
     @Inject lateinit var videoPlayerEngine: VideoPlayerEngine
+    @Inject lateinit var authService: BaiduAuthService
+    @Inject lateinit var fileRepository: FileRepository
 
     private var controlsVisible = false
+    private var quickSelectorVisible = false
+    private val selectAdapter = PlaylistQuickSelectorAdapter()
     private var autoHideJob: Job? = null
     private var progressJob: Job? = null
     private var pendingVideo: Pair<String, FileInfo>? = null
     private var fatalErrorShown = false
     private var resumePlaybackOnReturn = false
+    private var videoOutputSurface: Surface? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityPlaybackBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        // 裸 SurfaceView 默认 Surface 在 Window 之下：会把整个 SurfaceView bounds 挖穿露出 Surface，
-        // 导致 imageBackground 被遮住（黑边区看不到背景）。提升为 media overlay 后，Surface 合成到
-        // Window 之上、仅占已按视频比例缩放的 SurfaceView bounds，黑边区即可露出背后的 imageBackground。
-        binding.videoSurface.setZOrderMediaOverlay(true)
+        // TextureView 与普通 View 在同一合成层，可在 Sony Android 9 上可靠应用旋转，
+        // 同时不会像 SurfaceView 那样挖穿背景或在旋转后只剩声音。
         hideSystemBars()
         setupButtons()
+        setupQuickSelector()
         setupSeekBar()
         bindEngineListener()
         collectStateAndEvents()
@@ -221,24 +227,25 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         // loading 转圈 + 背景垫底（竖屏视频左右黑边处显示背景，与图片一致的三种模式）。
         binding.loadingProgress.visibility = View.VISIBLE
         applyVideoBackground(url)
-        // SurfaceView 先隐藏再显示以重建底层 Surface，清空上一个视频遗留的最后一帧。
-        binding.videoSurface.visibility = View.GONE
         binding.videoSurface.visibility = View.VISIBLE
+        binding.videoSurface.alpha = 1f
         // 新视频先恢复铺满，等 onVideoSizeChanged 回调按真实比例再调整（避免沿用上个视频的尺寸）。
         resetVideoSurfaceToFill()
         // 新视频分辨率未回调前清零，信息面板不应沿用上一个视频的分辨率。
         currentVideoWidth = 0
         currentVideoHeight = 0
-        val surfaceView = binding.videoSurface
-        val surface = surfaceView.holder.surface
-        if (surface == null || !surface.isValid || surfaceView.width == 0) {
-            // Surface 尚未创建/布局完成，等下一帧重试。
-            surfaceView.post { lifecycleScope.launch { playVideo(url, file) } }
+        val textureView = binding.videoSurface
+        val surfaceTexture = textureView.surfaceTexture
+        if (!textureView.isAvailable || surfaceTexture == null || textureView.width == 0) {
+            // TextureView 尚未创建/布局完成，等下一帧重试。
+            textureView.post { lifecycleScope.launch { playVideo(url, file) } }
             return
         }
-        // LibVLC 需要 SurfaceView 引用（官方 setVideoView 路径）+ 窗口尺寸，否则黑屏。
-        videoPlayerEngine.setVideoSurfaceView(surfaceView)
-        videoPlayerEngine.setVideoSurfaceSize(surfaceView.width, surfaceView.height)
+        videoOutputSurface?.release()
+        val surface = Surface(surfaceTexture).also { videoOutputSurface = it }
+        // 两个后端共用 TextureView；窗口尺寸在视频比例回调后还会再次同步。
+        videoPlayerEngine.setVideoTextureView(textureView)
+        videoPlayerEngine.setVideoSurfaceSize(textureView.width, textureView.height)
         when (val result = videoPlayerEngine.play(url, surface, buildRequestHeaders())) {
             PlaybackResult.Success -> {
                 binding.loadingProgress.visibility = View.GONE
@@ -335,7 +342,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         }
     }
 
-    /** 从已经渲染的 SurfaceView 抓取视频当前帧，避免依赖百度缩略图 URL。 */
+    /** 从已经渲染的 TextureView 抓取视频当前帧，避免依赖百度缩略图 URL。 */
     private fun captureVideoThumbnail(file: FileInfo, attempt: Int = 0) {
         if (binding.videoSurface.width <= 0 || binding.videoSurface.height <= 0) {
             Log.w(TAG, "视频缩略图跳过：Surface 无尺寸")
@@ -343,28 +350,16 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         }
         binding.videoSurface.postDelayed({
             if (isFinishing || isDestroyed) return@postDelayed
-            val bitmap = Bitmap.createBitmap(
-                binding.videoSurface.width,
-                binding.videoSurface.height,
-                Bitmap.Config.ARGB_8888,
-            )
-            PixelCopy.request(
-                binding.videoSurface,
-                bitmap,
-                { result ->
-                    if (result == PixelCopy.SUCCESS) {
-                        Log.d(TAG, "视频缩略图抓帧成功，attempt=$attempt")
-                        saveThumbnail(file, bitmap)
-                    } else {
-                        bitmap.recycle()
-                        Log.w(TAG, "视频缩略图抓帧失败，result=$result, attempt=$attempt")
-                        if (attempt + 1 < THUMBNAIL_CAPTURE_RETRIES) {
-                            captureVideoThumbnail(file, attempt + 1)
-                        }
-                    }
-                },
-                android.os.Handler(android.os.Looper.getMainLooper()),
-            )
+            val bitmap = binding.videoSurface.bitmap
+            if (bitmap != null) {
+                Log.d(TAG, "视频缩略图抓帧成功，attempt=$attempt")
+                saveThumbnail(file, bitmap)
+            } else {
+                Log.w(TAG, "视频缩略图抓帧失败，attempt=$attempt")
+                if (attempt + 1 < THUMBNAIL_CAPTURE_RETRIES) {
+                    captureVideoThumbnail(file, attempt + 1)
+                }
+            }
         }, if (attempt == 0) 1_000L else THUMBNAIL_CAPTURE_DELAY_MS)
     }
 
@@ -481,35 +476,45 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
                 true
             }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                if (!controlsVisible) showControls() else togglePlayback()
-                true
+                when {
+                    quickSelectorVisible -> false // RecyclerView item 处理选中
+                    !controlsVisible -> { showControls(); true }
+                    else -> { togglePlayback(); true }
+                }
             }
-            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                showControls()
-                true
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                when {
+                    quickSelectorVisible -> false // RecyclerView item 处理焦点
+                    !controlsVisible -> { showQuickSelector(); true }
+                    else -> super.dispatchKeyEvent(event)
+                }
+            }
+            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                when {
+                    quickSelectorVisible -> { hideQuickSelector(); true }
+                    !controlsVisible -> { showControls(); true }
+                    else -> super.dispatchKeyEvent(event)
+                }
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
-                if (controlsVisible) super.dispatchKeyEvent(event) else {
-                    seekOrPrevious()
-                    true
+                when {
+                    quickSelectorVisible -> false // RecyclerView item 处理焦点
+                    controlsVisible -> super.dispatchKeyEvent(event)
+                    else -> { seekOrPrevious(); true }
                 }
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                if (controlsVisible) super.dispatchKeyEvent(event) else {
-                    seekOrNext()
-                    true
+                when {
+                    quickSelectorVisible -> false // RecyclerView item 处理焦点
+                    controlsVisible -> super.dispatchKeyEvent(event)
+                    else -> { seekOrNext(); true }
                 }
             }
             KeyEvent.KEYCODE_BACK -> {
                 when {
-                    infoVisible -> {
-                        hideInfoPanel()
-                        true
-                    }
-                    controlsVisible -> {
-                        hideControls()
-                        true
-                    }
+                    quickSelectorVisible -> { hideQuickSelector(); true }
+                    infoVisible -> { hideInfoPanel(); true }
+                    controlsVisible -> { hideControls(); true }
                     else -> super.dispatchKeyEvent(event)
                 }
             }
@@ -590,23 +595,17 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
 
     /**
      * 按视频真实宽高比调整 [videoSurface] 尺寸（fit-center）：
-     * 裸 SurfaceView 会把画面拉伸铺满自身，需据此把 SurfaceView 缩放到容器内的正确比例，
+     * TextureView 会把画面铺满自身，需据此缩放到容器内的正确比例，
      * 横屏视频占满水平边、竖屏视频占满垂直边。回调可能在非主线程，切回主线程更新布局。
      */
     override fun onVideoSizeChanged(width: Int, height: Int) {
         if (width <= 0 || height <= 0) return
         runOnUiThread {
-            // 当前 Sony KD-65X9500H 的视频 Surface 输出统一逆时针偏转 90°。
-            // 先按旋转后的视觉宽高计算 fit-center，再把反向尺寸设置给 SurfaceView。
-            val outputRotation = if (Build.MANUFACTURER.equals("Sony", ignoreCase = true)) {
-                SONY_OUTPUT_ROTATION_DEGREES
-            } else {
-                0
-            }
-            val quarterTurn = outputRotation == 90 || outputRotation == 270
-            currentVideoWidth = if (quarterTurn) height else width
-            currentVideoHeight = if (quarterTurn) width else height
-            resizeVideoSurface(width, height, outputRotation)
+            // Media3 已应用视频旋转元数据；LibVLC 当前实机也未观察到方向异常。
+            // 两个后端均不额外旋转 TextureView，只按其上报的最终显示宽高布局。
+            currentVideoWidth = width
+            currentVideoHeight = height
+            resizeVideoSurface(width, height)
             if (infoVisible) renderInfoPanel(viewModel.uiState.value)
         }
     }
@@ -633,8 +632,74 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         params.width = target.surfaceSize.width
         params.height = target.surfaceSize.height
         params.gravity = android.view.Gravity.CENTER
-        binding.videoSurface.rotation = outputRotation.toFloat()
         binding.videoSurface.layoutParams = params
+        // 显式使用新布局尺寸的中心点，避免动态切换横竖屏后沿用旧 pivot 导致偏移/裁剪。
+        binding.videoSurface.pivotX = target.surfaceSize.width / 2f
+        binding.videoSurface.pivotY = target.surfaceSize.height / 2f
+        binding.videoSurface.rotation = outputRotation.toFloat()
+        // LibVLC 的 vout 窗口必须跟随 TextureView 旋转前的实际布局尺寸。
+        videoPlayerEngine.setVideoSurfaceSize(target.surfaceSize.width, target.surfaceSize.height)
+    }
+
+    private fun setupQuickSelector() {
+        binding.quickSelectorList.apply {
+            layoutManager = LinearLayoutManager(this@PlaybackActivity, LinearLayoutManager.HORIZONTAL, false)
+            adapter = selectAdapter
+        }
+    }
+
+    /** 上键呼出快速选播列表：倒序展示当前播放列表，浮在播放内容上方。 */
+    private fun showQuickSelector() {
+        val state = viewModel.uiState.value
+        val files = state.files
+        if (files.isEmpty()) return
+        quickSelectorVisible = true
+        val reversedFiles = files.reversed()
+        val reversedCurrentIndex = files.size - 1 - state.currentIndex
+        selectAdapter.configure(reversedFiles, reversedCurrentIndex) { reversedPos ->
+            val originalIndex = files.size - 1 - reversedPos
+            hideQuickSelector()
+            viewModel.playFromIndex(originalIndex)
+        }
+        binding.quickSelectorList.visibility = View.VISIBLE
+        binding.quickSelectorList.post {
+            // 先滚动使当前项可见，再聚焦到该项。
+            val lm = binding.quickSelectorList.layoutManager as? LinearLayoutManager
+            lm?.scrollToPositionWithOffset(
+                reversedCurrentIndex.coerceIn(0, files.size - 1),
+                binding.quickSelectorList.width / 3,
+            )
+            binding.quickSelectorList.post {
+                val holder = binding.quickSelectorList.findViewHolderForAdapterPosition(reversedCurrentIndex)
+                holder?.itemView?.requestFocus() ?: binding.quickSelectorList.requestFocus()
+            }
+        }
+        // 异步获取缩略图（filemetas?thumb=1），完成后刷新列表
+        fetchSelectorThumbnails(files)
+    }
+
+    /** 通过 filemetas API 批量获取缩略图并更新快速选播列表。 */
+    private fun fetchSelectorThumbnails(files: List<FileInfo>) {
+        val token = authService.getAccessToken() ?: return
+        val fsIds = files.map { it.fsId }.filter { it > 0 }
+        if (fsIds.isEmpty()) return
+        lifecycleScope.launch {
+            try {
+                val thumbnails = fileRepository.fetchThumbnails(token, fsIds)
+                if (thumbnails.isNotEmpty() && quickSelectorVisible) {
+                    selectAdapter.updateThumbnails(thumbnails)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "获取选播列表缩略图失败", e)
+            }
+        }
+    }
+
+    /** 下键/返回键收起快速选播列表。 */
+    private fun hideQuickSelector() {
+        quickSelectorVisible = false
+        binding.quickSelectorList.visibility = View.GONE
+        binding.playbackRoot.requestFocus()
     }
 
     override fun onEnded() {
@@ -718,6 +783,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         // 只 stop 不 release：引擎为进程级单例（复用底层 LibVLC 原生对象），
         // release() 会销毁原生 LibVLC，Activity 重建后再用会崩溃/触发 finalizer 断言。
         videoPlayerEngine.stop()
+        videoOutputSurface?.release()
+        videoOutputSurface = null
         super.onDestroy()
     }
 }

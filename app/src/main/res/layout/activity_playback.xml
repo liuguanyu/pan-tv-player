@@ -16,10 +16,9 @@
         android:contentDescription="@string/playback_image_background"
         android:scaleType="centerCrop" />
 
-    <!-- 裸 SurfaceView：Media3 与 LibVLC 均直接向 Surface 渲染。
-         不能用 media3 PlayerView——其内部 shutter 遮罩仅在 ExoPlayer 首帧回调时隐藏，
-         LibVLC 绕过 ExoPlayer 渲染会被遮罩挡住导致黑屏。 -->
-    <SurfaceView
+    <!-- TextureView：Media3 与 LibVLC 共用，可安全应用 Sony 输出方向补偿。
+         不使用 PlayerView，避免其 ExoPlayer shutter 遮住 LibVLC 输出。 -->
+    <TextureView
         android:id="@+id/videoSurface"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -196,6 +195,20 @@
                 android:text="@string/playback_mode" />
         </LinearLayout>
     </LinearLayout>
+
+    <!-- 快速选播列表：遥控器上键呼出，倒序展示播放列表，浮在播放内容上方 -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/quickSelectorList"
+        android:layout_width="match_parent"
+        android:layout_height="172dp"
+        android:layout_gravity="bottom"
+        android:layout_marginBottom="2dp"
+        android:background="#CC1A1A1A"
+        android:clipToPadding="false"
+        android:paddingVertical="4dp"
+        android:visibility="gone"
+        android:focusable="true"
+        android:descendantFocusability="afterDescendants" />
 
     <!-- 信息面板：菜单/信息键呼出，展示文件与解码信息（双引擎 failover 排障用） -->
     <LinearLayout

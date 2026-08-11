@@ -3,7 +3,7 @@ package com.baidu.tv.player.kt.player
 import android.content.Context
 import android.util.Log
 import android.view.Surface
-import android.view.SurfaceView
+import android.view.TextureView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -38,7 +38,7 @@ class Media3VideoPlayerEngine @Inject constructor(
 ) : VideoPlayerEngine {
 
     private var exoPlayer: ExoPlayer? = null
-    private var videoSurfaceView: SurfaceView? = null
+    private var videoTextureView: TextureView? = null
 
     /** 播放状态回调（可选）。由 Activity 注入以驱动 UI（进度/缓冲/结束）。 */
     var listener: Listener? = null
@@ -52,8 +52,8 @@ class Media3VideoPlayerEngine @Inject constructor(
 
         /**
          * 视频实际显示尺寸（已按像素宽高比 SAR 折算）。
-         * 裸 SurfaceView 渲染时解码器会把画面拉伸铺满 Surface，
-         * UI 层需据此把 SurfaceView 调整为正确宽高比（fit-center）。
+         * TextureView 渲染时画面会铺满输出 View，UI 层需据此调整为正确宽高比
+         * （fit-center）。
          */
         fun onVideoSizeChanged(width: Int, height: Int) {}
     }
@@ -74,7 +74,7 @@ class Media3VideoPlayerEngine @Inject constructor(
             if (videoSize.width <= 0 || videoSize.height <= 0) return
             val displayWidth = (videoSize.width * videoSize.pixelWidthHeightRatio).toInt()
             // API 21+ 旋转由 Media3/MediaCodec 内部应用，VideoSize 已是实际显示方向；
-            // 此处只应用像素宽高比（SAR），不能再次交换宽高或旋转 SurfaceView。
+            // 此处只应用像素宽高比（SAR）；设备输出补偿由 UI 的 TextureView 统一处理。
             listener?.onVideoSizeChanged(displayWidth, videoSize.height)
         }
 
@@ -143,11 +143,11 @@ class Media3VideoPlayerEngine @Inject constructor(
             .apply { if (headers.isNotEmpty()) setDefaultRequestProperties(headers) }
         val mediaItem = MediaItem.fromUri(url)
         val mediaSource = DefaultMediaSourceFactory(httpFactory).createMediaSource(mediaItem)
-        val surfaceView = videoSurfaceView
-        if (surfaceView != null) {
-            // 绑定 SurfaceView 而不是一次性的裸 Surface，让 ExoPlayer 跟踪 SurfaceHolder 的
-            // 尺寸变化与重建；Activity 做 fit-center 调整后，硬解输出尺寸才能同步更新。
-            player.setVideoSurfaceView(surfaceView)
+        val textureView = videoTextureView
+        if (textureView != null) {
+            // TextureView 支持可靠的旋转/缩放变换；Sony Android 9 上避免旋转
+            // SurfaceView 导致“有声音但黑屏”。
+            player.setVideoTextureView(textureView)
         } else {
             player.setVideoSurface(surface)
         }
@@ -195,8 +195,8 @@ class Media3VideoPlayerEngine @Inject constructor(
 
     override fun switchBackend(backend: VideoPlayerEngine.Backend) = Unit
 
-    override fun setVideoSurfaceView(surfaceView: SurfaceView) {
-        videoSurfaceView = surfaceView
+    override fun setVideoTextureView(textureView: TextureView) {
+        videoTextureView = textureView
     }
 
     override fun resume() {

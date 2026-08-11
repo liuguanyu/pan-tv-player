@@ -8,7 +8,9 @@ import androidx.recyclerview.widget.RecyclerView
 import com.baidu.tv.player.kt.databinding.ItemPlaylistCardBinding
 import com.baidu.tv.player.kt.model.Playlist
 
-class PlaylistAdapter : RecyclerView.Adapter<PlaylistCardViewHolder>() {
+class PlaylistAdapter(
+    private val accessTokenProvider: () -> String? = { null },
+) : RecyclerView.Adapter<PlaylistCardViewHolder>() {
 
     private val playlists = mutableListOf<Playlist>()
     private val refreshingPlaylistIds = mutableSetOf<Long>()
@@ -48,7 +50,7 @@ class PlaylistAdapter : RecyclerView.Adapter<PlaylistCardViewHolder>() {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PlaylistCardViewHolder {
         val binding = ItemPlaylistCardBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return PlaylistCardViewHolder(binding)
+        return PlaylistCardViewHolder(binding, accessTokenProvider)
     }
 
     override fun onBindViewHolder(holder: PlaylistCardViewHolder, position: Int) {

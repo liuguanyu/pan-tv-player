@@ -89,4 +89,13 @@ interface BaiduPanService {
         @Query("dlink") dlink: Int,
         @Query("access_token") accessToken: String,
     ): FileListResponse
+
+    /** 获取文件信息（含缩略图）。fsids 需为 JSON 数组字符串，上限 100 个。 */
+    @GET(ApiConstants.ENDPOINT_MULTIMEDIA)
+    suspend fun getFileInfoWithThumbs(
+        @Query("method") method: String,
+        @Query("fsids") fsids: String,
+        @Query("thumb") thumb: Int,
+        @Query("access_token") accessToken: String,
+    ): FileListResponse
 }

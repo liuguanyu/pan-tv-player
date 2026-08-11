@@ -47,12 +47,13 @@ interface VideoPlayerEngine {
     fun setVideoSurfaceSize(width: Int, height: Int) {}
 
     /**
-     * 提供渲染目标 [android.view.SurfaceView]（可选）。
+     * 提供渲染目标 [android.view.TextureView]（可选）。
      *
-     * LibVLC 用 `IVLCVout.setVideoView(SurfaceView)`，Media3 用 `setVideoSurfaceView(SurfaceView)`；
-     * 两者都由播放器跟踪 SurfaceHolder 的尺寸变化与重建，比一次性绑定裸 Surface 更可靠。
+     * Sony Android 9 对旋转后的 SurfaceView 合成不可靠；TextureView 可安全应用视频方向
+     * 变换。LibVLC 用 `IVLCVout.setVideoView(TextureView)`，Media3 用
+     * `setVideoTextureView(TextureView)`，两套后端共用同一输出目标。
      */
-    fun setVideoSurfaceView(surfaceView: android.view.SurfaceView) {}
+    fun setVideoTextureView(textureView: android.view.TextureView) {}
 
     /** 恢复播放。 */
     fun resume()

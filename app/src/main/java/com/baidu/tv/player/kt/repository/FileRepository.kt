@@ -216,6 +216,36 @@ open class FileRepository @Inject constructor(
         }
     }
 
+    /**
+     * 批量获取文件缩略图（filemetas?thumb=1）。
+     *
+     * 百度 API 的 filelist 接口只为图片返回 thumbs，视频需通过 filemetas?thumb=1 获取。
+     * 每次最多 100 个 fsid，超出分批请求。
+     *
+     * @return fsId → 缩略图 URL（跳过 /file/ 下载链接）
+     */
+    open suspend fun fetchThumbnails(accessToken: String, fsIds: List<Long>): Map<Long, String> {
+        if (fsIds.isEmpty()) return emptyMap()
+        val result = mutableMapOf<Long, String>()
+        fsIds.distinct().chunked(100).forEach { batch ->
+            val fsids = batch.joinToString(",", "[", "]")
+            try {
+                val resp = apiService.getFileInfoWithThumbs("filemetas", fsids, 1, accessToken)
+                if (resp.isSuccess()) {
+                    resp.list?.forEach { file ->
+                        val thumbUrl = sequenceOf(
+                            file.thumbs?.url1, file.thumbs?.url2, file.thumbs?.url3, file.thumbs?.icon,
+                        ).firstOrNull { url -> !url.isNullOrBlank() && !url.contains("/file/") }
+                        if (thumbUrl != null) result[file.fsId] = thumbUrl
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "批量获取缩略图失败: ${e.message}")
+            }
+        }
+        return result
+    }
+
     /** 暴露给外部用于判断响应是否成功（测试可见）。 */
     fun isSuccess(response: FileListResponse): Boolean = response.isSuccess()
 }
