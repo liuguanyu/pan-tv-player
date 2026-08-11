@@ -140,6 +140,10 @@ class Media3VideoPlayerEngine @Inject constructor(
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(USER_AGENT)
             .setAllowCrossProtocolRedirects(true)
+            // 百度 dlink 在大文件或弱网下首个连接可能短暂失败；让 Media3 重试网络错误，
+            // 并避免默认超时过短导致长时间无数据时直接判定播放失败。
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(60_000)
             .apply { if (headers.isNotEmpty()) setDefaultRequestProperties(headers) }
         val mediaItem = MediaItem.fromUri(url)
         val mediaSource = DefaultMediaSourceFactory(httpFactory).createMediaSource(mediaItem)

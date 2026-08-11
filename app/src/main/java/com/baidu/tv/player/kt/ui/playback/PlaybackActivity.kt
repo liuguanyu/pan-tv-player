@@ -31,6 +31,7 @@ import com.baidu.tv.player.kt.player.PlaybackResult
 import com.baidu.tv.player.kt.player.UnsupportedReason
 import com.baidu.tv.player.kt.player.VideoPlayerEngine
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.baidu.tv.player.kt.auth.BaiduAuthService
 import com.baidu.tv.player.kt.repository.FileRepository
 import com.baidu.tv.player.kt.ui.playback.image.ImageBackgroundFactory
@@ -225,13 +226,15 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     private suspend fun playVideo(url: String, file: FileInfo) {
         pendingVideo = url to file
         binding.imageDisplay.visibility = View.GONE
-        // 切换视频时先停止上一个引擎并清除其残留画面，缓冲期间不应停留在上一帧。
+        // 切换视频前先把上一帧变成背景并隐藏 TextureView，避免最后一帧被全屏拉伸覆盖背景。
+        preserveVideoFrameAsBackground()
         stopProgressUpdates()
         videoPlayerEngine.stop()
         // loading 转圈 + 背景垫底（竖屏视频左右黑边处显示背景，与图片一致的三种模式）。
         binding.loadingProgress.visibility = View.VISIBLE
         applyVideoBackground(url)
-        binding.videoSurface.visibility = View.VISIBLE
+        // 新视频首帧真正可用前保持隐藏，避免显示尚未按比例调整的全屏画面。
+        binding.videoSurface.visibility = View.GONE
         binding.videoSurface.alpha = 1f
         // 新视频先恢复铺满，等 onVideoSizeChanged 回调按真实比例再调整（避免沿用上个视频的尺寸）。
         resetVideoSurfaceToFill()
@@ -253,6 +256,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         when (val result = videoPlayerEngine.play(url, surface, buildRequestHeaders())) {
             PlaybackResult.Success -> {
                 binding.loadingProgress.visibility = View.GONE
+                binding.videoSurface.visibility = View.VISIBLE
                 viewModel.setPlaying(true)
                 startProgressUpdates()
                 // 视频画面已开始渲染：此刻才显示三个角信息。
@@ -276,6 +280,14 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
      * 竖屏视频左右、横屏视频上下会留黑边，用视频首帧生成的背景填充这些区域。
      * 抓帧失败（如流不可 seek）时回退为黑色背景。
      */
+    private fun preserveVideoFrameAsBackground() {
+        val frame = binding.videoSurface.bitmap ?: return
+        lifecycleScope.launch {
+            ImageBackgroundFactory.fromValue(viewModel.uiState.value.imageBackgroundMode)
+                .apply(binding.imageBackground, frame)
+        }
+    }
+
     private fun applyVideoBackground(url: String) {
         binding.imageBackground.visibility = View.VISIBLE
         val mode = viewModel.uiState.value.imageBackgroundMode
@@ -659,12 +671,20 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         if (files.isEmpty()) return
         quickSelectorVisible = true
         val reversedFiles = files.reversed()
-        val reversedCurrentIndex = files.size - 1 - state.currentIndex
-        selectAdapter.configure(reversedFiles, reversedCurrentIndex) { reversedPos ->
-            val originalIndex = files.size - 1 - reversedPos
-            hideQuickSelector()
-            viewModel.playFromIndex(originalIndex)
+        val currentFile = state.currentFile
+        selectAdapter.configure(reversedFiles, currentFile) { selectedFile ->
+            val originalIndex = files.indexOfFirst { candidate ->
+                if (selectedFile.fsId != 0L) candidate.fsId == selectedFile.fsId
+                else candidate.path == selectedFile.path
+            }
+            if (originalIndex >= 0) {
+                hideQuickSelector()
+                viewModel.playFromIndex(originalIndex)
+            }
         }
+        val reversedCurrentIndex = selectAdapter.positionOf(currentFile)
+            .takeIf { it != RecyclerView.NO_POSITION }
+            ?: 0
         binding.quickSelectorList.visibility = View.VISIBLE
         binding.quickSelectorList.post {
             // 先滚动使当前项可见，再聚焦到该项。
@@ -707,6 +727,10 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     }
 
     override fun onEnded() {
+        // 切歌前立即隐藏 TextureView；否则结束瞬间最后一帧可能覆盖模糊背景并被拉伸到全屏。
+        preserveVideoFrameAsBackground()
+        binding.videoSurface.visibility = View.GONE
+        binding.loadingProgress.visibility = View.VISIBLE
         viewModel.playNext()
     }
 

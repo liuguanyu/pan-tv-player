@@ -9,6 +9,7 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.view.doOnLayout
 import android.widget.EditText
 import android.widget.Toast
 import androidx.fragment.app.Fragment
@@ -95,6 +96,8 @@ class MainFragment : Fragment() {
             }
         }
         requestFocusOnVisibleElement()
+        // 从文件浏览页返回时，RecyclerView 可能还在恢复布局；布局完成后再补一次子项焦点。
+        view?.postDelayed({ requestFocusOnVisibleElement() }, FOCUS_RESTORE_DELAY_MS)
     }
 
     override fun onDestroyView() {
@@ -311,15 +314,21 @@ class MainFragment : Fragment() {
 
     private fun requestFocusOnVisibleElement() {
         binding.root.post {
-            when (selectedSection) {
+            val target = when (selectedSection) {
                 HomeSection.PLAYLISTS -> when {
-                    !playlistsEmpty && playlistAdapter.itemCount > 0 -> binding.rvPlaylists.requestFocus()
-                    binding.emptyPlaylist.visibility == View.VISIBLE -> binding.btnEmptyCreate.requestFocus()
-                    else -> binding.tabPlaylists.requestFocus()
+                    !playlistsEmpty && playlistAdapter.itemCount > 0 -> binding.rvPlaylists
+                    binding.emptyPlaylist.visibility == View.VISIBLE -> binding.btnEmptyCreate
+                    else -> binding.tabPlaylists
                 }
                 HomeSection.RECENT -> when {
-                    !recentTasksEmpty && recentTaskAdapter.itemCount > 0 -> binding.rvRecentTasks.requestFocus()
-                    else -> binding.tabRecent.requestFocus()
+                    !recentTasksEmpty && recentTaskAdapter.itemCount > 0 -> binding.rvRecentTasks
+                    else -> binding.tabRecent
+                }
+            }
+            target.requestFocus()
+            if (target is androidx.recyclerview.widget.RecyclerView) {
+                target.doOnLayout {
+                    target.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
                 }
             }
         }
@@ -331,6 +340,8 @@ class MainFragment : Fragment() {
         if (requestCode == REQUEST_CREATE_PLAYLIST && resultCode == Activity.RESULT_OK) {
             selectedSection = HomeSection.PLAYLISTS
             renderSelectedSection(requestFocus = true)
+            // 文件浏览 Activity 返回后先刷新数据，再在 RecyclerView 完成布局后恢复到首张卡片。
+            binding.root.postDelayed({ requestFocusOnVisibleElement() }, FOCUS_RESTORE_DELAY_MS)
             Toast.makeText(requireContext(), "播放列表已创建", Toast.LENGTH_SHORT).show()
         }
     }
@@ -341,5 +352,6 @@ class MainFragment : Fragment() {
         private const val REQUEST_CREATE_PLAYLIST = 1001
         private const val GRID_COLUMNS = 4
         private const val STATE_SECTION = "home_section"
+        private const val FOCUS_RESTORE_DELAY_MS = 180L
     }
 }
