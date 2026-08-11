@@ -140,7 +140,6 @@ class Media3VideoPlayerEngine @Inject constructor(
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(USER_AGENT)
             .setAllowCrossProtocolRedirects(true)
-
             .apply { if (headers.isNotEmpty()) setDefaultRequestProperties(headers) }
         val mediaItem = MediaItem.fromUri(url)
         val mediaSource = DefaultMediaSourceFactory(httpFactory).createMediaSource(mediaItem)

@@ -59,6 +59,7 @@ private const val THUMBNAIL_CAPTURE_RETRIES = 5
 private const val THUMBNAIL_CAPTURE_DELAY_MS = 800L
 private const val FIRST_PLAY_RETRY_DELAY_MS = 600L
 private const val TAG = "PlaybackActivity"
+private const val VIDEO_BACKGROUND_MAX_EDGE = 640
 
 /**
  * 播放页（Phase 5）：Media3 视频播放 + 图片播放/特效/背景。
@@ -229,8 +230,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     private suspend fun playVideo(url: String, file: FileInfo) {
         pendingVideo = url to file
         binding.imageDisplay.visibility = View.GONE
-        // 切换视频前先把上一帧变成背景并隐藏 TextureView，避免最后一帧被全屏拉伸覆盖背景。
-        preserveVideoFrameAsBackground()
+        // 播放启动路径不要同步抓取 TextureView 全尺寸画面；4K 帧复制会阻塞主线程并显著拖慢加载。
         stopProgressUpdates()
         videoPlayerEngine.stop()
         // loading 转圈 + 背景垫底（竖屏视频左右黑边处显示背景，与图片一致的三种模式）。
@@ -284,7 +284,14 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
      * 抓帧失败（如流不可 seek）时回退为黑色背景。
      */
     private fun preserveVideoFrameAsBackground() {
-        val frame = binding.videoSurface.bitmap ?: return
+        if (!binding.videoSurface.isAvailable) return
+        // 背景会被模糊/取主色，无需复制完整 4K 帧；限制尺寸避免播放结束切换时阻塞主线程。
+        val sourceWidth = binding.videoSurface.width.coerceAtLeast(1)
+        val sourceHeight = binding.videoSurface.height.coerceAtLeast(1)
+        val scale = minOf(1f, VIDEO_BACKGROUND_MAX_EDGE.toFloat() / maxOf(sourceWidth, sourceHeight))
+        val frameWidth = (sourceWidth * scale).toInt().coerceAtLeast(1)
+        val frameHeight = (sourceHeight * scale).toInt().coerceAtLeast(1)
+        val frame = binding.videoSurface.getBitmap(frameWidth, frameHeight) ?: return
         lifecycleScope.launch {
             ImageBackgroundFactory.fromValue(viewModel.uiState.value.imageBackgroundMode)
                 .apply(binding.imageBackground, frame)
