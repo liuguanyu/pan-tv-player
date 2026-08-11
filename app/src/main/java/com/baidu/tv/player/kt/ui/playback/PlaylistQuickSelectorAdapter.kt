@@ -1,6 +1,5 @@
 package com.baidu.tv.player.kt.ui.playback
 
-import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -41,6 +40,14 @@ class PlaylistQuickSelectorAdapter : RecyclerView.Adapter<PlaylistQuickSelectorA
     fun positionOf(file: FileInfo?): Int {
         val key = file?.stableKey() ?: return RecyclerView.NO_POSITION
         return items.indexOfFirst { it.stableKey() == key }
+    }
+
+    /** 由播放页按当前焦点位置显式确认选播，避免不同 TV 对确认键的点击转换行为不一致。 */
+    fun selectAt(position: Int): Boolean {
+        val item = items.getOrNull(position) ?: return false
+        val callback = onItemSelected ?: return false
+        callback(item)
+        return true
     }
 
     /** 播放项切换后同步当前高亮，只刷新旧项和新项，避免焦点跳动。 */
@@ -98,17 +105,11 @@ class PlaylistQuickSelectorAdapter : RecyclerView.Adapter<PlaylistQuickSelectorA
         holder.focusBar.visibility = if (isCurrent) View.VISIBLE else View.GONE
 
         holder.itemView.setOnClickListener {
-            val pos = holder.bindingAdapterPosition
-            if (pos != RecyclerView.NO_POSITION) onItemSelected?.invoke(items[pos])
-        }
-        holder.itemView.setOnKeyListener { _, keyCode, event ->
-            if (event.action == KeyEvent.ACTION_DOWN &&
-                (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)
-            ) {
-                holder.itemView.performClick()
-                true
-            } else {
-                false
+            val pos = holder.absoluteAdapterPosition
+            val cb = this@PlaylistQuickSelectorAdapter.onItemSelected
+            val currentItems = this@PlaylistQuickSelectorAdapter.items
+            if (pos != RecyclerView.NO_POSITION && pos < currentItems.size && cb != null) {
+                cb(currentItems[pos])
             }
         }
         holder.itemView.setOnFocusChangeListener { _, hasFocus ->

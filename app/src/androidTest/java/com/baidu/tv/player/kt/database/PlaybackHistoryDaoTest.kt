@@ -52,12 +52,31 @@ class PlaybackHistoryDaoTest {
     }
 
     @Test
+    fun insert_samePath_replacesExistingRecordWithoutDuplicate() = runTest {
+        historyDao.insert(history("/A", 100L, name = "old"))
+        historyDao.insert(history("/A", 200L, name = "new"))
+
+        val all = historyDao.getAllHistorySync()
+        assertEquals(1, all.size)
+        assertEquals("new", all.single().folderName)
+    }
+
+    @Test
     fun getAllHistorySync_orderedByLastPlayTimeDesc() = runTest {
         historyDao.insert(history("/old", 100L))
         historyDao.insert(history("/new", 999L))
         historyDao.insert(history("/mid", 500L))
         val all = historyDao.getAllHistorySync()
         assertEquals(listOf("/new", "/mid", "/old"), all.map { it.folderPath })
+    }
+
+    @Test
+    fun getAllHistorySync_sameTimestampUsesNewestIdFirst() = runTest {
+        historyDao.insert(history("/first", 100L))
+        historyDao.insert(history("/second", 100L))
+
+        val all = historyDao.getAllHistorySync()
+        assertEquals(listOf("/second", "/first"), all.map { it.folderPath })
     }
 
     @Test

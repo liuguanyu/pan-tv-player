@@ -11,6 +11,7 @@ import android.view.Surface
 import android.util.Log
 
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.widget.SeekBar
@@ -25,6 +26,7 @@ import com.baidu.tv.player.kt.R
 import com.baidu.tv.player.kt.databinding.ActivityPlaybackBinding
 import com.baidu.tv.player.kt.model.FileInfo
 import com.baidu.tv.player.kt.model.MediaType
+import com.baidu.tv.player.kt.player.BackgroundMusicPlayer
 import com.baidu.tv.player.kt.player.HybridVideoPlayerEngine
 import com.baidu.tv.player.kt.player.Media3VideoPlayerEngine
 import com.baidu.tv.player.kt.player.PlaybackResult
@@ -34,6 +36,8 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.baidu.tv.player.kt.auth.BaiduAuthService
 import com.baidu.tv.player.kt.repository.FileRepository
+import com.baidu.tv.player.kt.repository.BgmSelection
+import com.baidu.tv.player.kt.repository.SettingsRepository
 import com.baidu.tv.player.kt.ui.playback.image.ImageBackgroundFactory
 import com.baidu.tv.player.kt.ui.playback.image.ImageEffectFactory
 import com.baidu.tv.player.kt.ui.settings.SettingsActivity
@@ -75,6 +79,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     @Inject lateinit var videoPlayerEngine: VideoPlayerEngine
     @Inject lateinit var authService: BaiduAuthService
     @Inject lateinit var fileRepository: FileRepository
+    @Inject lateinit var settingsRepository: SettingsRepository
 
     private var controlsVisible = false
     private var quickSelectorVisible = false
@@ -89,11 +94,20 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     private var videoOutputSurface: Surface? = null
     private var currentImageBitmap: Bitmap? = null
     private var lastPresentationState: Pair<Int, String>? = null
+    private var quickSelectorCurrentKey: String? = null
+    private var quickSelectorDataKey: String? = null
+    private lateinit var backgroundMusicPlayer: BackgroundMusicPlayer
+    private var bgmSelectionKey: Long = 0L
+    private var bgmUrl: String? = null
+    private var bgmResolveJob: Job? = null
+    private var bgmPausedByLifecycle = false
+    private var bgmSelection: BgmSelection? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityPlaybackBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        backgroundMusicPlayer = BackgroundMusicPlayer(applicationContext)
         // TextureView 与普通 View 在同一合成层，可在 Sony Android 9 上可靠应用旋转，
         // 同时不会像 SurfaceView 那样挖穿背景或在旋转后只剩声音。
         hideSystemBars()
@@ -162,6 +176,12 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
                 launch {
                     viewModel.events.collect { event -> handleEvent(event) }
                 }
+                launch {
+                    settingsRepository.bgm.collect { selection ->
+                        bgmSelection = selection
+                        syncBackgroundMusic(viewModel.uiState.value)
+                    }
+                }
             }
         }
     }
@@ -210,7 +230,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         }
         if (infoVisible) renderInfoPanel(state)
         refreshPresentationIfNeeded(state)
-        if (quickSelectorVisible) selectAdapter.setHighlightedFile(state.currentFile)
+        syncBackgroundMusic(state)
+        if (quickSelectorVisible) syncQuickSelectorToCurrent(state.currentFile)
         // 初始化失败（如播放列表为空）时事件可能在订阅前已丢失，这里按状态兜底提示并退出。
         if (!state.hasPlaylist && !state.isLoading && state.errorMessage != null && !fatalErrorShown) {
             fatalErrorShown = true
@@ -229,6 +250,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     }
 
     private suspend fun playVideo(url: String, file: FileInfo) {
+        backgroundMusicPlayer.pause()
         pendingVideo = url to file
         binding.imageDisplay.visibility = View.GONE
         // 播放启动路径不要同步抓取 TextureView 全尺寸画面；4K 帧复制会阻塞主线程并显著拖慢加载。
@@ -397,6 +419,42 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { byte -> "%02x".format(byte) }
 
+    private fun syncBackgroundMusic(state: PlaybackUiState) {
+        val selection = bgmSelection
+        if (selection == null) {
+            bgmResolveJob?.cancel()
+            bgmUrl = null
+            bgmSelectionKey = 0L
+            backgroundMusicPlayer.stop()
+            return
+        }
+        if (selection.fsId != bgmSelectionKey) {
+            bgmResolveJob?.cancel()
+            bgmUrl = null
+            bgmSelectionKey = selection.fsId
+            backgroundMusicPlayer.stop()
+            bgmResolveJob = lifecycleScope.launch {
+                runCatching {
+                    val token = authService.getAccessToken().orEmpty()
+                    val detail = fileRepository.fetchFileDetail(token, selection.fsId)
+                    val dlink = detail?.dlink?.takeIf { it.isNotBlank() }
+                        ?: error("背景音乐缺少下载链接")
+                    if (dlink.contains("access_token=")) dlink else dlink + (if (dlink.contains('?')) "&" else "?") + "access_token=" + token
+                }.onSuccess { url ->
+                    bgmUrl = url
+                    if (viewModel.uiState.value.isCurrentImage && !bgmPausedByLifecycle) {
+                        backgroundMusicPlayer.play(url, buildRequestHeaders())
+                    }
+                }.onFailure { Log.w(TAG, "背景音乐加载失败", it) }
+            }
+        }
+        if (state.isCurrentVideo) {
+            backgroundMusicPlayer.pause()
+        } else if (state.isCurrentImage && !bgmPausedByLifecycle) {
+            bgmUrl?.let { backgroundMusicPlayer.play(it, buildRequestHeaders()) }
+        }
+    }
+
     private fun applyImagePresentation(bitmap: Bitmap) {
         val state = viewModel.uiState.value
         lastPresentationState = state.imageBackgroundMode to state.imageEffect.name
@@ -526,14 +584,20 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
             }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                 when {
-                    quickSelectorVisible -> false // RecyclerView item 处理选中
+                    quickSelectorVisible -> {
+                        val focusedChild = binding.quickSelectorList.focusedChild
+                        val position = focusedChild?.let(binding.quickSelectorList::getChildAdapterPosition)
+                            ?: RecyclerView.NO_POSITION
+                        selectAdapter.selectAt(position)
+                        true
+                    }
                     !controlsVisible -> { showControls(); true }
                     else -> { togglePlayback(); true }
                 }
             }
             KeyEvent.KEYCODE_DPAD_UP -> {
                 when {
-                    quickSelectorVisible -> false // RecyclerView item 处理焦点
+                    quickSelectorVisible -> super.dispatchKeyEvent(event)
                     !controlsVisible -> { showQuickSelector(); true }
                     else -> super.dispatchKeyEvent(event)
                 }
@@ -547,14 +611,14 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
                 when {
-                    quickSelectorVisible -> false // RecyclerView item 处理焦点
+                    quickSelectorVisible -> super.dispatchKeyEvent(event)
                     controlsVisible -> super.dispatchKeyEvent(event)
                     else -> { seekOrPrevious(); true }
                 }
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 when {
-                    quickSelectorVisible -> false // RecyclerView item 处理焦点
+                    quickSelectorVisible -> super.dispatchKeyEvent(event)
                     controlsVisible -> super.dispatchKeyEvent(event)
                     else -> { seekOrNext(); true }
                 }
@@ -694,6 +758,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         binding.quickSelectorList.apply {
             layoutManager = LinearLayoutManager(this@PlaybackActivity, LinearLayoutManager.HORIZONTAL, false)
             adapter = selectAdapter
+            isFocusable = false
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         }
     }
 
@@ -703,38 +769,58 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         val files = state.files
         if (files.isEmpty()) return
         quickSelectorVisible = true
-        val reversedFiles = files.reversed()
-        val currentFile = state.currentFile
-        selectAdapter.configure(reversedFiles, currentFile) { selectedFile ->
-            val originalIndex = files.indexOfFirst { candidate ->
-                if (selectedFile.fsId != 0L) candidate.fsId == selectedFile.fsId
-                else candidate.path == selectedFile.path
-            }
+        configureQuickSelector(state)
+        binding.quickSelectorList.visibility = View.VISIBLE
+        focusQuickSelectorCurrent(state.currentFile)
+        // 异步获取缩略图（filemetas?thumb=1），完成后刷新列表
+        fetchSelectorThumbnails(files)
+    }
+
+    private fun configureQuickSelector(state: PlaybackUiState) {
+        val files = state.files
+        quickSelectorDataKey = files.joinToString("|") { fileKey(it) }
+        quickSelectorCurrentKey = null
+        selectAdapter.configure(files.reversed(), state.currentFile) { selectedFile ->
+            val latestFiles = viewModel.uiState.value.files
+            val selectedKey = fileKey(selectedFile)
+            val originalIndex = latestFiles.indexOfFirst { fileKey(it) == selectedKey }
             if (originalIndex >= 0) {
-                selectAdapter.setHighlightedFile(selectedFile)
                 hideQuickSelector()
                 viewModel.playFromIndex(originalIndex)
             }
         }
-        val reversedCurrentIndex = selectAdapter.positionOf(currentFile)
-            .takeIf { it != RecyclerView.NO_POSITION }
-            ?: 0
-        binding.quickSelectorList.visibility = View.VISIBLE
+    }
+
+    private fun syncQuickSelectorToCurrent(currentFile: FileInfo?) {
+        val state = viewModel.uiState.value
+        val dataKey = state.files.joinToString("|") { fileKey(it) }
+        if (dataKey != quickSelectorDataKey) {
+            configureQuickSelector(state)
+            fetchSelectorThumbnails(state.files)
+        } else {
+            selectAdapter.setHighlightedFile(currentFile)
+        }
+        val currentKey = currentFile?.let(::fileKey)
+        if (currentKey != quickSelectorCurrentKey) {
+            focusQuickSelectorCurrent(currentFile)
+        }
+    }
+
+    private fun focusQuickSelectorCurrent(currentFile: FileInfo?) {
+        val position = selectAdapter.positionOf(currentFile)
+        if (position == RecyclerView.NO_POSITION) return
+        quickSelectorCurrentKey = currentFile?.let(::fileKey)
         binding.quickSelectorList.post {
-            // 先滚动使当前项可见，再聚焦到该项。
             val lm = binding.quickSelectorList.layoutManager as? LinearLayoutManager
-            lm?.scrollToPositionWithOffset(
-                reversedCurrentIndex.coerceIn(0, files.size - 1),
-                binding.quickSelectorList.width / 3,
-            )
+            lm?.scrollToPositionWithOffset(position, binding.quickSelectorList.width / 3)
             binding.quickSelectorList.post {
-                val holder = binding.quickSelectorList.findViewHolderForAdapterPosition(reversedCurrentIndex)
-                holder?.itemView?.requestFocus() ?: binding.quickSelectorList.requestFocus()
+                binding.quickSelectorList.findViewHolderForAdapterPosition(position)?.itemView?.requestFocus()
             }
         }
-        // 异步获取缩略图（filemetas?thumb=1），完成后刷新列表
-        fetchSelectorThumbnails(files)
     }
+
+    private fun fileKey(file: FileInfo): String =
+        if (file.fsId != 0L) "fs:${file.fsId}" else "path:${file.path.orEmpty()}"
 
     /** 通过 filemetas API 批量获取缩略图并更新快速选播列表。 */
     private fun fetchSelectorThumbnails(files: List<FileInfo>) {
@@ -756,6 +842,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     /** 下键/返回键收起快速选播列表。 */
     private fun hideQuickSelector() {
         quickSelectorVisible = false
+        quickSelectorCurrentKey = null
+        quickSelectorDataKey = null
         binding.quickSelectorList.visibility = View.GONE
         binding.playbackRoot.requestFocus()
     }
@@ -833,9 +921,11 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
 
     override fun onResume() {
         super.onResume()
+        bgmPausedByLifecycle = false
         hideSystemBars()
         val state = viewModel.uiState.value
         refreshPresentationIfNeeded(state)
+        syncBackgroundMusic(state)
         if (resumePlaybackOnReturn && state.isCurrentVideo && state.contentReady) {
             videoPlayerEngine.resume()
         }
@@ -844,6 +934,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
 
     override fun onPause() {
         resumePlaybackOnReturn = viewModel.uiState.value.isCurrentVideo && videoPlayerEngine.isPlaying()
+        bgmPausedByLifecycle = true
+        backgroundMusicPlayer.pause()
         videoPlayerEngine.pause()
         super.onPause()
     }
@@ -859,6 +951,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         // 只 stop 不 release：引擎为进程级单例（复用底层 LibVLC 原生对象），
         // release() 会销毁原生 LibVLC，Activity 重建后再用会崩溃/触发 finalizer 断言。
         videoPlayerEngine.stop()
+        backgroundMusicPlayer.release()
+        bgmResolveJob?.cancel()
         videoOutputSurface?.release()
         videoOutputSurface = null
         super.onDestroy()

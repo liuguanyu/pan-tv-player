@@ -97,6 +97,36 @@ class PlaybackViewModelTest {
     }
 
     @Test
+    fun recentPlayback_switchingItemPersistsHistoryWithoutReorderingSessionSnapshot() = runTest {
+        val histories = listOf(
+            history(id = 11, name = "a.mp4", fsId = 1),
+            history(id = 12, name = "b.mp4", fsId = 2),
+            history(id = 13, name = "c.mp4", fsId = 3),
+        )
+        every { historyRepository.getRecentHistory(PlaybackHistoryRepository.MAX_HISTORY) } returns
+            MutableStateFlow(histories)
+        every { historyRepository.getHistoryById(12) } returns MutableStateFlow(histories[1])
+        histories.forEach { history ->
+            coEvery { fileRepository.fetchFileDetail("token", history.fsId) } returns
+                video(history.folderName!!, history.fsId, dlink = "https://d/${history.fsId}")
+        }
+        val vm = viewModel()
+
+        vm.initializeFromHistory(12)
+        advanceUntilIdle()
+        assertEquals(listOf(1L, 2L, 3L), vm.uiState.value.files.map { it.fsId })
+        assertEquals(1, vm.uiState.value.currentIndex)
+
+        vm.playFromIndex(2)
+        advanceUntilIdle()
+
+        assertEquals(listOf(1L, 2L, 3L), vm.uiState.value.files.map { it.fsId })
+        assertEquals(2, vm.uiState.value.currentIndex)
+        assertEquals(3L, vm.uiState.value.currentFile?.fsId)
+        coVerify { historyRepository.insert(match { it.fsId == 3L }) }
+    }
+
+    @Test
     fun playNextAndPrevious_followSequentialOrder() = runTest {
         val files = listOf(video("a.mp4", fsId = 1), video("b.mp4", fsId = 2), video("c.mp4", fsId = 3))
         playlistCache.put("p", files)
@@ -232,6 +262,21 @@ class PlaybackViewModelTest {
         historyRepository = historyRepository,
         playlistRepository = playlistRepository,
         locationExtractionService = locationExtractionService,
+    )
+
+    private fun history(
+        id: Long,
+        name: String,
+        fsId: Long,
+    ) = PlaybackHistory(
+        id = id,
+        folderPath = "/movies/$name",
+        folderName = name,
+        mediaType = MediaType.VIDEO.code,
+        fileCount = 1,
+        lastPlayTime = id,
+        createTime = id,
+        fsId = fsId,
     )
 
     private fun video(

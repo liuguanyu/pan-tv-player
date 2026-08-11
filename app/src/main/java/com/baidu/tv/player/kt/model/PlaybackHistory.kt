@@ -1,6 +1,7 @@
 package com.baidu.tv.player.kt.model
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -8,13 +9,16 @@ import androidx.room.PrimaryKey
  *
  * 语义为**文件级**：每次开始播放某个文件即记录该文件（而非整个目录/播放列表）。
  * - 主页"最近播放"按 [lastPlayTime] 倒序展示，最新播放在最前。
- * - 去重键为 [filePath]：重复播放同一文件时，将其 [lastPlayTime] 更新为当前，等价于移动到队尾（最新）。
+ * - 去重键为 [folderPath]：重复播放同一文件时，将其 [lastPlayTime] 更新为当前，等价于移动到列表队首（最新）。
  * - 容量上限 100，超出按先进先出（FIFO）淘汰最旧记录（见 PlaybackHistoryRepository）。
  * - 点击后需要能"从该文件开始播放"，因此记录来源上下文：
  *   [sourcePlaylistId]（来自数据库播放列表）或 [sourceFolderPath]+[mediaType]（来自云盘目录），
  *   并用 [fsId] 在重建的列表中定位起始索引。
  */
-@Entity(tableName = "playback_history")
+@Entity(
+    tableName = "playback_history",
+    indices = [Index(value = ["folderPath"], unique = true)],
+)
 data class PlaybackHistory(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     /** 文件完整路径，作为去重键。历史遗留列名沿用 folderPath。 */

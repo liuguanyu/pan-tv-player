@@ -17,7 +17,8 @@ import org.junit.Test
 class PlaybackHistoryRepositoryTest {
 
     private val dao: PlaybackHistoryDao = mockk(relaxed = true)
-    private val repo = PlaybackHistoryRepository(dao)
+    private val transactionRunner = TransactionRunner { block -> block() }
+    private val repo = PlaybackHistoryRepository(dao, transactionRunner)
 
     private fun history(folder: String, lastPlayTime: Long = 0L) =
         PlaybackHistory(folderPath = folder, lastPlayTime = lastPlayTime, createTime = 0L)
@@ -28,6 +29,7 @@ class PlaybackHistoryRepositoryTest {
         repo.insert(history("/A"))
         coVerify { dao.insert(any()) }
         coVerify(exactly = 0) { dao.update(any()) }
+        coVerify { dao.count() }
     }
 
     @Test
@@ -37,6 +39,7 @@ class PlaybackHistoryRepositoryTest {
         repo.insert(history("/A"))
         coVerify { dao.update(any()) }
         coVerify(exactly = 0) { dao.insert(any()) }
+        coVerify { dao.count() }
     }
 
     @Test

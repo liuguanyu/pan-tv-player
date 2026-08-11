@@ -148,6 +148,16 @@ class FileBrowserFragment : Fragment() {
 
     private fun handleEvent(event: FileBrowserUiEvent) {
         when (event) {
+            is FileBrowserUiEvent.AudioSelected -> {
+                requireActivity().setResult(
+                    Activity.RESULT_OK,
+                    Intent()
+                        .putExtra("audioFsId", event.fsId)
+                        .putExtra("audioPath", event.path)
+                        .putExtra("audioName", event.name),
+                )
+                requireActivity().finish()
+            }
             is FileBrowserUiEvent.OpenPlayback -> startPlayback(event)
             FileBrowserUiEvent.PlaylistCreationStarted -> Toast.makeText(requireContext(), "正在扫描文件，请稍候...", Toast.LENGTH_SHORT).show()
             is FileBrowserUiEvent.PlaylistCreationSucceeded -> {

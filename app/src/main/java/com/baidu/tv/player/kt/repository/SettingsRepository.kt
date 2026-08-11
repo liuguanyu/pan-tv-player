@@ -54,6 +54,9 @@ class SettingsRepository @Inject constructor(
     private val _showCaptureTime = MutableStateFlow(readShowCaptureTime())
     val showCaptureTime: StateFlow<Boolean> = _showCaptureTime.asStateFlow()
 
+    private val _bgm = MutableStateFlow(readBgm())
+    val bgm: StateFlow<BgmSelection?> = _bgm.asStateFlow()
+
     // ========== 播放模式 ==========
 
     fun setPlayMode(mode: PlayMode) {
@@ -136,6 +139,24 @@ class SettingsRepository @Inject constructor(
     private fun readShowCaptureTime(): Boolean =
         prefs.getBoolean(KEY_SHOW_CAPTURE_TIME, DEFAULT_SHOW_CAPTURE_TIME)
 
+    fun setBgm(selection: BgmSelection?) {
+        prefs.edit {
+            if (selection == null) {
+                remove(KEY_BGM_FS_ID).remove(KEY_BGM_PATH).remove(KEY_BGM_NAME)
+            } else {
+                putLong(KEY_BGM_FS_ID, selection.fsId)
+                    .putString(KEY_BGM_PATH, selection.path)
+                    .putString(KEY_BGM_NAME, selection.name)
+            }
+        }
+        _bgm.value = selection
+    }
+
+    private fun readBgm(): BgmSelection? {
+        val fsId = prefs.getLong(KEY_BGM_FS_ID, 0L)
+        return if (fsId > 0L) BgmSelection(fsId, prefs.getString(KEY_BGM_PATH, null), prefs.getString(KEY_BGM_NAME, null)) else null
+    }
+
     companion object {
         /** Hilt Named 限定符：设置专用 SharedPreferences。 */
         const val PREFS_QUALIFIER = "settings_prefs"
@@ -151,6 +172,9 @@ class SettingsRepository @Inject constructor(
         const val KEY_SHOW_CAPTURE_TIME = "show_capture_time"
         const val KEY_PLAY_MODE = "play_mode"
         const val KEY_BACKGROUND_MODE = "background_mode"
+        const val KEY_BGM_FS_ID = "bgm_fs_id"
+        const val KEY_BGM_PATH = "bgm_path"
+        const val KEY_BGM_NAME = "bgm_name"
 
         const val DEFAULT_IMAGE_EFFECT = 0 // 淡入淡出
         const val DEFAULT_IMAGE_DISPLAY_DURATION = 10_000 // 10 秒

@@ -16,10 +16,11 @@ import com.baidu.tv.player.kt.model.PlaylistItem
  * - version=3：playback_history 增加 coverImagePath / sourcePlaylistId 两列（[MIGRATION_2_3]）。
  * - version=4：playback_history 改为**文件级**语义，增加 sourceFolderPath / fsId 两列，
  *   并清空旧的目录级历史数据（旧数据语义不兼容，见 [MIGRATION_3_4]）。
+ * - version=5：清理相同文件路径的重复历史，并为 folderPath 增加唯一索引（[MIGRATION_4_5]）。
  */
 @Database(
     entities = [PlaybackHistory::class, Playlist::class, PlaylistItem::class],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -53,6 +54,28 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE playback_history ADD COLUMN sourceFolderPath TEXT")
                 db.execSQL("ALTER TABLE playback_history ADD COLUMN fsId INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("DELETE FROM playback_history")
+            }
+        }
+
+        /**
+         * v4 -> v5：folderPath 是文件级最近播放的业务唯一键。
+         * 先删除重复路径的旧记录（lastPlayTime 相同时保留 id 最大者），再建立唯一索引，
+         * 防止并发写入产生同一文件的多条历史。
+         */
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "DELETE FROM playback_history WHERE EXISTS (" +
+                        "SELECT 1 FROM playback_history newer " +
+                        "WHERE newer.folderPath = playback_history.folderPath " +
+                        "AND (newer.lastPlayTime > playback_history.lastPlayTime " +
+                        "OR (newer.lastPlayTime = playback_history.lastPlayTime " +
+                        "AND newer.id > playback_history.id)))",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                        "index_playback_history_folderPath ON playback_history(folderPath)",
+                )
             }
         }
     }

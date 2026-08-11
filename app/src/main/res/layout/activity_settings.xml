@@ -54,6 +54,22 @@
                 tools:text="淡入淡出" />
         </LinearLayout>
 
+        <!-- 图片播放背景音乐 -->
+        <LinearLayout
+            android:id="@+id/rowBgm"
+            style="@style/SettingsRow"
+            android:focusable="true">
+
+            <TextView
+                style="@style/SettingsRowLabel"
+                android:text="@string/settings_bgm" />
+
+            <TextView
+                android:id="@+id/valueBgm"
+                style="@style/SettingsRowValue"
+                tools:text="关闭" />
+        </LinearLayout>
+
         <!-- 图片背景 -->
         <LinearLayout
             android:id="@+id/rowBackground"

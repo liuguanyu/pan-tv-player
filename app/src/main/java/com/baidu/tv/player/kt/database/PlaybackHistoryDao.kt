@@ -24,16 +24,16 @@ interface PlaybackHistoryDao {
     @Delete
     suspend fun delete(history: PlaybackHistory)
 
-    @Query("SELECT * FROM playback_history ORDER BY lastPlayTime DESC")
+    @Query("SELECT * FROM playback_history ORDER BY lastPlayTime DESC, id DESC")
     fun getAllHistory(): Flow<List<PlaybackHistory>>
 
-    @Query("SELECT * FROM playback_history ORDER BY lastPlayTime DESC")
+    @Query("SELECT * FROM playback_history ORDER BY lastPlayTime DESC, id DESC")
     suspend fun getAllHistorySync(): List<PlaybackHistory>
 
-    @Query("SELECT * FROM playback_history ORDER BY lastPlayTime DESC LIMIT :limit")
+    @Query("SELECT * FROM playback_history ORDER BY lastPlayTime DESC, id DESC LIMIT :limit")
     fun getRecentHistory(limit: Int): Flow<List<PlaybackHistory>>
 
-    @Query("SELECT * FROM playback_history ORDER BY lastPlayTime DESC LIMIT 4")
+    @Query("SELECT * FROM playback_history ORDER BY lastPlayTime DESC, id DESC LIMIT 4")
     fun getTop4History(): Flow<List<PlaybackHistory>>
 
     @Query("SELECT * FROM playback_history WHERE id = :id")
@@ -55,7 +55,7 @@ interface PlaybackHistoryDao {
      */
     @Query(
         "DELETE FROM playback_history WHERE id NOT IN (" +
-            "SELECT id FROM playback_history ORDER BY lastPlayTime DESC LIMIT :keep)",
+            "SELECT id FROM playback_history ORDER BY lastPlayTime DESC, id DESC LIMIT :keep)",
     )
     suspend fun trimToLimit(keep: Int)
 

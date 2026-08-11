@@ -7,7 +7,8 @@ package com.baidu.tv.player.kt.model
 enum class MediaType(val code: Int, val displayName: String) {
     IMAGE(1, "图片"),
     VIDEO(2, "视频"),
-    ALL(3, "图片+视频");
+    ALL(3, "图片+视频"),
+    AUDIO(4, "音频");
 
     /** value 与 code 同义，兼容旧调用。 */
     val value: Int get() = code

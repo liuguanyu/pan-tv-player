@@ -1,5 +1,6 @@
 package com.baidu.tv.player.kt.ui.playback
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.baidu.tv.player.kt.auth.BaiduAuthService
@@ -16,6 +17,7 @@ import com.baidu.tv.player.kt.repository.PlaylistRepository
 import com.baidu.tv.player.kt.repository.SettingsRepository
 import com.baidu.tv.player.kt.util.PlaylistCache
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -169,6 +171,7 @@ class PlaybackViewModel @Inject constructor(
                 _uiState.update { it.copy(showCaptureTime = enabled) }
             }
         }
+
     }
 
     fun initialize(
@@ -251,60 +254,35 @@ class PlaybackViewModel @Inject constructor(
         }
     }
 
-    /**
-     * 从播放历史初始化（主页"最近播放"入口，extras 传 historyId）。
-     *
-     * 文件级历史：根据记录的来源上下文重建可播列表，并定位到该文件的 fs_id 开始播放：
-     * - [PlaybackHistory.sourcePlaylistId] 非空 → 按数据库播放列表重建，定位到 fsId；
-     * - 否则按 [PlaybackHistory.sourceFolderPath]（或 folderPath 的父目录）重新拉取云盘目录，定位到 fsId。
-     */
+    /** 从播放历史初始化（主页"最近播放"入口）。将所有最近播放记录作为播放列表，定位到被点击的文件。 */
     fun initializeFromHistory(historyId: Long) {
         if (_uiState.value.files.isNotEmpty()) return
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            val history = historyRepository.getHistoryById(historyId).first()
-            if (history == null) {
-                emitError("播放历史不存在")
+            val allHistory = historyRepository.getRecentHistory(PlaybackHistoryRepository.MAX_HISTORY).first()
+                .filter { it.fsId > 0L }
+            if (allHistory.isEmpty()) {
+                emitError("播放历史为空")
                 return@launch
             }
-            // 来源为数据库播放列表：按列表重建并定位到该文件（用列表内已存文件，不调云盘目录 API）。
-            history.sourcePlaylistId?.let { playlistDbId ->
-                initializeFromDatabasePlaylist(playlistDbId, startFsId = history.fsId)
-                return@launch
-            }
-            // 来源为云盘目录：按目录重新拉取文件列表并定位到该文件。
-            val folderPath = history.sourceFolderPath?.takeIf { it.isNotBlank() }
-                ?: history.folderPath.substringBeforeLast('/', "").ifEmpty { "/" }
-            val token = authService.getAccessToken().orEmpty()
-            if (token.isEmpty()) {
-                emitError("未获取到访问令牌，请先登录")
-                return@launch
-            }
-            val files = runCatching {
-                fileRepository.getFileList(token, folderPath, history.mediaType)
-            }.getOrElse { throwable ->
-                emitError(throwable.message ?: "加载文件列表失败")
-                return@launch
-            }.filterNot { it.isDirectory() }
-            if (files.isEmpty()) {
-                emitError("目录中没有可播放文件")
-                return@launch
-            }
-            val safeIndex = files.indexOfFirst { it.fsId == history.fsId }
-                .takeIf { it >= 0 }
-                ?: resolveStartIndex(files.size, 0)
-            val folderName = folderPath.trimEnd('/').substringAfterLast('/').ifEmpty { folderPath }
+            val files = allHistory.map { it.toPlaybackFileInfo() }
+            val clickedHistory = historyRepository.getHistoryById(historyId).first()
+            val safeIndex = if (clickedHistory != null && clickedHistory.fsId > 0L) {
+                files.indexOfFirst { it.fsId == clickedHistory.fsId }.takeIf { it >= 0 }
+            } else {
+                null
+            } ?: resolveStartIndex(files.size, 0)
             _uiState.update {
                 it.copy(
                     playlistId = "history-$historyId",
                     files = files,
                     currentIndex = safeIndex,
                     currentFile = files[safeIndex],
-                    mediaType = history.mediaType,
-                    folderPath = folderPath,
-                    folderName = folderName,
-                    sourceFolderPath = folderPath,
+                    mediaType = MediaType.ALL.code,
+                    folderPath = "最近播放",
+                    folderName = "最近播放",
                     sourcePlaylistId = null,
+                    sourceFolderPath = null,
                     isLoading = true,
                     errorMessage = null,
                 )
@@ -312,6 +290,17 @@ class PlaybackViewModel @Inject constructor(
             prepareAndEmitCurrent()
         }
     }
+
+    private fun PlaybackHistory.toPlaybackFileInfo(): FileInfo = FileInfo(
+        fsId = fsId,
+        path = folderPath,
+        serverFilename = folderName,
+        size = 0,
+        category = when (mediaType) {
+            MediaType.VIDEO.code -> 1
+            else -> 3
+        },
+    )
 
     /** Playlist.mediaType(0=混合,1=视频,2=图片) → MediaType code(1=图片,2=视频,3=混合)。 */
     private fun Int.toPlaybackMediaTypeCode(): Int = when (this) {
@@ -583,7 +572,12 @@ class PlaybackViewModel @Inject constructor(
      */
     private suspend fun insertCurrentFileHistory(file: FileInfo) {
         val state = _uiState.value
-        val filePath = file.path?.takeIf { it.isNotBlank() } ?: return
+        val filePath = file.path?.takeIf { it.isNotBlank() }
+            ?: file.serverFilename?.let { name ->
+                val folder = state.folderPath.trimEnd('/')
+                if (folder.isNotEmpty()) "$folder/$name" else "/$name"
+            }
+            ?: return
         val fileName = file.serverFilename ?: filePath.substringAfterLast('/')
         val mediaType = if (file.isVideo()) MediaType.VIDEO.code else MediaType.IMAGE.code
         // 数据库播放列表项不保存 thumbs，但获取 dlink 的 filemetas 接口会返回完整文件详情。
@@ -592,23 +586,34 @@ class PlaybackViewModel @Inject constructor(
         val thumbs = file.thumbs ?: fileDetailCache[file.fsId]?.thumbs
         val cover = sequenceOf(thumbs?.icon, thumbs?.url1, thumbs?.url2, thumbs?.url3)
             .firstOrNull { url -> !url.isNullOrBlank() && !url.contains("/file/") }
-        historyRepository.insert(
-            PlaybackHistory(
-                folderPath = filePath,
-                folderName = fileName,
-                mediaType = mediaType,
-                fileCount = 1,
-                createTime = System.currentTimeMillis(),
-                coverImagePath = cover,
-                sourcePlaylistId = state.sourcePlaylistId,
-                sourceFolderPath = state.sourceFolderPath,
-                fsId = file.fsId,
-            ),
-        )
+
+        try {
+            historyRepository.insert(
+                PlaybackHistory(
+                    folderPath = filePath,
+                    folderName = fileName,
+                    mediaType = mediaType,
+                    fileCount = 1,
+                    createTime = System.currentTimeMillis(),
+                    coverImagePath = cover,
+                    sourcePlaylistId = state.sourcePlaylistId,
+                    sourceFolderPath = state.sourceFolderPath,
+                    fsId = file.fsId,
+                ),
+            )
+        } catch (throwable: Throwable) {
+            if (throwable is CancellationException) throw throwable
+            // 最近播放属于附属数据：写库失败时保留内存中的即时排序，不中断已成功的媒体播放。
+            Log.e(TAG, "更新最近播放失败: $filePath", throwable)
+        }
     }
 
     private fun emitError(message: String) {
         _uiState.update { it.copy(errorMessage = message, isLoading = false) }
         _events.tryEmit(PlaybackUiEvent.ShowError(message))
+    }
+
+    private companion object {
+        const val TAG = "PlaybackViewModel"
     }
 }

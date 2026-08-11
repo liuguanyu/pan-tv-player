@@ -2,10 +2,12 @@ package com.baidu.tv.player.kt.di
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.withTransaction
 import com.baidu.tv.player.kt.database.AppDatabase
 import com.baidu.tv.player.kt.database.PlaybackHistoryDao
 import com.baidu.tv.player.kt.database.PlaylistDao
 import com.baidu.tv.player.kt.database.PlaylistItemDao
+import com.baidu.tv.player.kt.repository.TransactionRunner
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -38,4 +40,9 @@ object TestDatabaseModule {
 
     @Provides
     fun providePlaybackHistoryDao(db: AppDatabase): PlaybackHistoryDao = db.playbackHistoryDao()
+
+    @Provides
+    @Singleton
+    fun provideTransactionRunner(db: AppDatabase): TransactionRunner =
+        TransactionRunner { block -> db.withTransaction { block() } }
 }

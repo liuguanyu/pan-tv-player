@@ -211,6 +211,7 @@ open class FileRepository @Inject constructor(
             when (mediaType) {
                 MediaType.IMAGE.code -> file.isImage()
                 MediaType.VIDEO.code -> file.isVideo()
+                MediaType.AUDIO.code -> file.isAudio()
                 else -> file.isImage() || file.isVideo() // ALL(3) 及默认
             }
         }

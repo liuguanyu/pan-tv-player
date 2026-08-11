@@ -93,6 +93,12 @@ class FileBrowserViewModel @Inject constructor(
     }
 
     fun onFileClicked(file: FileInfo) {
+        if (MediaType.fromCode(mediaType) == MediaType.AUDIO && file.isAudio()) {
+            viewModelScope.launch {
+                _events.emit(FileBrowserUiEvent.AudioSelected(file.fsId, file.path, file.serverFilename))
+            }
+            return
+        }
         if (uiState.value.multiSelectMode) {
             if (file.isDirectory()) enterDirectory(file.path) else toggleSelection(file)
             return
@@ -247,6 +253,7 @@ class FileBrowserViewModel @Inject constructor(
             MediaType.VIDEO -> 1
             MediaType.IMAGE -> 2
             MediaType.ALL -> 0
+            MediaType.AUDIO -> 0
         }
         val playlist = Playlist(
             name = playlistName,
@@ -277,6 +284,7 @@ class FileBrowserViewModel @Inject constructor(
         MediaType.IMAGE -> isImage()
         MediaType.VIDEO -> isVideo()
         MediaType.ALL -> isImage() || isVideo()
+        MediaType.AUDIO -> isAudio()
     }
 
     private fun FileInfo.parentPath(): String? = path?.substringBeforeLast('/', missingDelimiterValue = "")?.takeIf { it.isNotBlank() } ?: ROOT_PATH
@@ -326,6 +334,7 @@ enum class SortMode(val label: String) {
 }
 
 sealed interface FileBrowserUiEvent {
+    data class AudioSelected(val fsId: Long, val path: String?, val name: String?) : FileBrowserUiEvent
     data class OpenPlayback(
         val files: List<FileInfo>,
         val startIndex: Int,

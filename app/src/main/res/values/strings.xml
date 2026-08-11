@@ -60,6 +60,8 @@
     <string name="settings_title">设置</string>
     <string name="settings_play_mode">播放模式</string>
     <string name="settings_image_effect">图片特效</string>
+    <string name="settings_bgm">图片播放背景音乐</string>
+    <string name="settings_bgm_choose">选择网盘音频</string>
     <string name="settings_background_mode">图片背景</string>
     <string name="settings_display_duration">幻灯片间隔</string>
     <string name="settings_transition_duration">过渡时长</string>

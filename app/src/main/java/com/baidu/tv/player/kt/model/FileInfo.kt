@@ -48,6 +48,9 @@ data class FileInfo(
         return ext in VIDEO_EXTENSIONS
     }
 
+    /** 是否是可作为背景音乐的音频文件。 */
+    fun isAudio(): Boolean = extension.lowercase() in AUDIO_EXTENSIONS
+
     /** 获取文件扩展名（不含点，无扩展名返回空串）。 */
     val extension: String
         get() {
@@ -73,5 +76,6 @@ data class FileInfo(
         private val VIDEO_EXTENSIONS = setOf(
             "mp4", "mov", "3gp", "mkv", "avi", "m4v", "flv", "wmv", "webm",
         )
+        private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "wma")
     }
 }

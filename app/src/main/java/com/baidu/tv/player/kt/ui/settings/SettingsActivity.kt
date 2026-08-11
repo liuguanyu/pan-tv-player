@@ -1,8 +1,11 @@
 package com.baidu.tv.player.kt.ui.settings
 
+import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
@@ -11,6 +14,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.baidu.tv.player.kt.R
 import com.baidu.tv.player.kt.databinding.ActivitySettingsBinding
 import com.baidu.tv.player.kt.model.ImageEffect
+import com.baidu.tv.player.kt.model.MediaType
+import com.baidu.tv.player.kt.repository.BgmSelection
+import com.baidu.tv.player.kt.ui.filebrowser.FileBrowserActivity
 import com.baidu.tv.player.kt.model.PlayMode
 import com.baidu.tv.player.kt.ui.playback.image.ImageBackgroundMode
 import dagger.hilt.android.AndroidEntryPoint
@@ -29,6 +35,19 @@ class SettingsActivity : FragmentActivity() {
     private lateinit var binding: ActivitySettingsBinding
     private val viewModel: SettingsViewModel by viewModels()
 
+    private val bgmPicker = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode != Activity.RESULT_OK) return@registerForActivityResult
+        val data = result.data ?: return@registerForActivityResult
+        val fsId = data.getLongExtra("audioFsId", 0L)
+        if (fsId > 0L) {
+            viewModel.setBgm(
+                BgmSelection(fsId, data.getStringExtra("audioPath"), data.getStringExtra("audioName")),
+            )
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
@@ -41,6 +60,7 @@ class SettingsActivity : FragmentActivity() {
     private fun setupRows() {
         binding.rowPlayMode.setOnClickListener { showPlayModeMenu() }
         binding.rowImageEffect.setOnClickListener { showImageEffectMenu() }
+        binding.rowBgm.setOnClickListener { showBgmMenu() }
         binding.rowBackground.setOnClickListener { showBackgroundModeMenu() }
         binding.rowDisplayDuration.setOnClickListener { showDisplayDurationMenu() }
         binding.rowTransitionDuration.setOnClickListener { showTransitionDurationMenu() }
@@ -86,6 +106,7 @@ class SettingsActivity : FragmentActivity() {
     private fun render(state: SettingsUiState) {
         binding.valuePlayMode.text = state.playMode.displayName
         binding.valueImageEffect.text = state.imageEffect.displayName
+        binding.valueBgm.text = state.bgm?.name ?: getString(R.string.settings_off)
         binding.valueBackground.text = state.backgroundMode.displayName
         binding.valueDisplayDuration.text =
             getString(R.string.settings_seconds_format, formatSeconds(state.imageDisplayDurationMs))
@@ -125,6 +146,26 @@ class SettingsActivity : FragmentActivity() {
             labels = options.map { it.displayName },
             checkedIndex = options.indexOf(viewModel.uiState.value.imageEffect),
         ) { viewModel.setImageEffect(options[it]) }
+    }
+
+    private fun showBgmMenu() {
+        val selection = viewModel.uiState.value.bgm
+        val labels = listOf(getString(R.string.settings_off), getString(R.string.settings_bgm_choose))
+        showSingleChoiceMenu(
+            title = getString(R.string.settings_bgm),
+            labels = labels,
+            checkedIndex = if (selection == null) 0 else 1,
+        ) { index ->
+            if (index == 0) {
+                viewModel.setBgm(null)
+            } else {
+                bgmPicker.launch(
+                    Intent(this, FileBrowserActivity::class.java)
+                        .putExtra(FileBrowserActivity.EXTRA_MEDIA_TYPE, MediaType.AUDIO.code)
+                        .putExtra(FileBrowserActivity.EXTRA_INITIAL_PATH, "/"),
+                )
+            }
+        }
     }
 
     private fun showBackgroundModeMenu() {

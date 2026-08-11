@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.baidu.tv.player.kt.location.LocationExtractionService
 import com.baidu.tv.player.kt.model.ImageEffect
 import com.baidu.tv.player.kt.model.PlayMode
+import com.baidu.tv.player.kt.repository.BgmSelection
 import com.baidu.tv.player.kt.repository.SettingsRepository
 import com.baidu.tv.player.kt.ui.playback.image.ImageBackgroundMode
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,6 +29,7 @@ data class SettingsUiState(
     val showLocation: Boolean = true,
     val showCounter: Boolean = true,
     val showCaptureTime: Boolean = true,
+    val bgm: BgmSelection? = null,
 )
 
 /** 设置页一次性事件。 */
@@ -60,8 +62,9 @@ class SettingsViewModel @Inject constructor(
             settingsRepository.showLocation,
             settingsRepository.showCounter,
             settingsRepository.showCaptureTime,
-        ) { transition, showLocation, showCounter, showCaptureTime ->
-            SecondarySettings(transition, showLocation, showCounter, showCaptureTime)
+            settingsRepository.bgm,
+        ) { transition, showLocation, showCounter, showCaptureTime, bgm ->
+            SecondarySettings(transition, showLocation, showCounter, showCaptureTime, bgm)
         },
     ) { playMode, effect, background, display, secondary ->
         SettingsUiState(
@@ -73,6 +76,7 @@ class SettingsViewModel @Inject constructor(
             showLocation = secondary.showLocation,
             showCounter = secondary.showCounter,
             showCaptureTime = secondary.showCaptureTime,
+            bgm = secondary.bgm,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -86,6 +90,7 @@ class SettingsViewModel @Inject constructor(
         val showLocation: Boolean,
         val showCounter: Boolean,
         val showCaptureTime: Boolean,
+        val bgm: BgmSelection?,
     )
 
     private val _events = MutableSharedFlow<SettingsUiEvent>(extraBufferCapacity = 1)
@@ -108,6 +113,8 @@ class SettingsViewModel @Inject constructor(
     fun setShowCounter(show: Boolean) = settingsRepository.setShowCounter(show)
 
     fun setShowCaptureTime(show: Boolean) = settingsRepository.setShowCaptureTime(show)
+
+    fun setBgm(selection: BgmSelection?) = settingsRepository.setBgm(selection)
 
     /**
      * 地点识别测试入口（tasks.md 7.4）：给定媒体 URL 尝试解析地址并通过事件回传。
