@@ -47,6 +47,8 @@ class MainActivity : FragmentActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_M) {
+            val mainFragment = supportFragmentManager.findFragmentById(R.id.main_browse_fragment) as? MainFragment
+            if (mainFragment?.onMenuKeyPressed() == true) return true
             openSettings()
             return true
         }

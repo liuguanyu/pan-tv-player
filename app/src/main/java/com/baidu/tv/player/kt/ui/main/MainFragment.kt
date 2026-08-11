@@ -18,6 +18,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.baidu.tv.player.kt.R
 import com.baidu.tv.player.kt.auth.BaiduAuthService
 import com.baidu.tv.player.kt.databinding.FragmentMainBinding
@@ -98,6 +99,19 @@ class MainFragment : Fragment() {
         requestFocusOnVisibleElement()
         // 从文件浏览页返回时，RecyclerView 可能还在恢复布局；布局完成后再补一次子项焦点。
         view?.postDelayed({ requestFocusOnVisibleElement() }, FOCUS_RESTORE_DELAY_MS)
+    }
+
+    fun onMenuKeyPressed(): Boolean {
+        if (!isAdded || _binding == null || selectedSection != HomeSection.PLAYLISTS) return false
+        val focused = playlistAdapter.focusedPlaylist ?: run {
+            val focusedView = requireActivity().currentFocus ?: return false
+            val holder = binding.rvPlaylists.findContainingViewHolder(focusedView)
+            holder?.bindingAdapterPosition
+                ?.takeIf { it != RecyclerView.NO_POSITION }
+                ?.let { playlistAdapter.getItem(it) }
+        } ?: return false
+        showPlaylistActions(focused)
+        return true
     }
 
     override fun onDestroyView() {
