@@ -148,6 +148,10 @@ class FileBrowserViewModel @Inject constructor(
         }
     }
 
+    fun toggleViewMode() {
+        _uiState.update { it.copy(isGridMode = !it.isGridMode) }
+    }
+
     fun playCurrentList() {
         val playableFiles = uiState.value.files.filterNot { it.isDirectory() }
         if (playableFiles.isEmpty()) {
@@ -293,6 +297,7 @@ data class FileBrowserUiState(
     val sortMode: SortMode = SortMode.NAME_ASC,
     val isRecursive: Boolean = false,
     val multiSelectMode: Boolean = false,
+    val isGridMode: Boolean = false,
     val selectedPaths: Set<String> = emptySet(),
 )
 

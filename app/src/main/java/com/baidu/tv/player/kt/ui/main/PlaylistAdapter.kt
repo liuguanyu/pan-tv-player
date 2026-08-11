@@ -29,8 +29,10 @@ class PlaylistAdapter(
         private set
 
     fun setPlaylists(newPlaylists: List<Playlist>) {
+        val focusedId = focusedPlaylist?.id
         playlists.clear()
         playlists.addAll(newPlaylists)
+        focusedPlaylist = focusedId?.let { id -> playlists.firstOrNull { it.id == id } }
         notifyDataSetChanged()
     }
 

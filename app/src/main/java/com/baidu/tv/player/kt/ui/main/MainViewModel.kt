@@ -41,6 +41,17 @@ class MainViewModel @Inject constructor(
     private val _events = MutableSharedFlow<MainUiEvent>(extraBufferCapacity = 1)
     val events: SharedFlow<MainUiEvent> = _events.asSharedFlow()
 
+    fun renamePlaylist(playlist: Playlist, newName: String) {
+        val normalizedName = newName.trim()
+        if (normalizedName.isEmpty() || normalizedName == playlist.name) return
+        viewModelScope.launch {
+            val renamedPlaylist = playlist.copy(name = normalizedName)
+            runCatching { playlistRepository.updatePlaylist(renamedPlaylist) }
+                .onSuccess { _events.emit(MainUiEvent.PlaylistRenamed(renamedPlaylist)) }
+                .onFailure { _events.emit(MainUiEvent.Error(it.message ?: "播放列表改名失败")) }
+        }
+    }
+
     fun deletePlaylist(playlist: Playlist) {
         viewModelScope.launch {
             runCatching { playlistRepository.deletePlaylist(playlist) }
@@ -72,6 +83,7 @@ sealed interface MainUiEvent {
     data class RefreshStarted(val playlist: Playlist) : MainUiEvent
     data class RefreshSucceeded(val playlist: Playlist, val itemCount: Int) : MainUiEvent
     data class RefreshFailed(val playlist: Playlist, val message: String) : MainUiEvent
+    data class PlaylistRenamed(val playlist: Playlist) : MainUiEvent
     data class PlaylistDeleted(val playlist: Playlist) : MainUiEvent
     data class Error(val message: String) : MainUiEvent
 }

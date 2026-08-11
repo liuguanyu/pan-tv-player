@@ -59,6 +59,15 @@
             android:id="@+id/btn_play_selected"
             style="@style/FileBrowserActionButton"
             tools:text="播放当前列表" />
+
+        <TextView
+            android:id="@+id/btn_view_mode"
+            style="@style/FileBrowserActionButton"
+            android:layout_marginStart="12dp"
+            android:drawableStart="@drawable/ic_view_grid"
+            android:drawablePadding="8dp"
+            android:contentDescription="@string/file_browser_view_mode"
+            tools:text="网格视图" />
     </LinearLayout>
 
     <TextView

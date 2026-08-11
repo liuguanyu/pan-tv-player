@@ -12,6 +12,7 @@
     <!-- 主界面 -->
     <string name="my_playlists">我的播放列表</string>
     <string name="recent_tasks">最近播放</string>
+    <string name="home_tab_count">%1$s  %2$d</string>
     <string name="thumbnail">缩略图</string>
     <string name="action_browse">浏览文件</string>
     <string name="action_create">新建列表</string>
@@ -24,8 +25,18 @@
     <string name="hint_default">OK 进入 · 菜单 设置</string>
     <string name="hint_playlist_card">OK 播放 · 长按 刷新 · 菜单 更多操作</string>
     <string name="hint_recent_card">OK 继续播放</string>
+    <string name="file_browser_view_mode">切换视图</string>
+    <string name="file_browser_grid_view">网格视图</string>
+    <string name="file_browser_list_view">列表视图</string>
+    <string name="playlist_action_rename">改名</string>
     <string name="playlist_action_refresh">刷新同步</string>
     <string name="playlist_action_delete">删除播放列表</string>
+    <string name="playlist_rename_title">修改播放列表名称</string>
+    <string name="playlist_rename_empty">名称不能为空</string>
+    <string name="playlist_rename_success">播放列表已改名</string>
+    <string name="playlist_cover">播放列表封面</string>
+    <string name="playlist_refresh_hint">长按卡片刷新播放列表</string>
+    <string name="confirm">确定</string>
     <string name="cancel">取消</string>
 
     <!-- 播放页 -->

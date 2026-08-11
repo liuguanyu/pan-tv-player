@@ -103,6 +103,20 @@ class MainViewModelTest {
     }
 
     @Test
+    fun renamePlaylist_updatesNameAndEmitsEvent() = runTest {
+        val playlist = Playlist(id = 4L, name = "旧名称")
+        val renamed = playlist.copy(name = "新名称")
+        coEvery { playlistRepository.updatePlaylist(renamed) } returns Unit
+
+        viewModel.events.test {
+            viewModel.renamePlaylist(playlist, "  新名称  ")
+            assertEquals(MainUiEvent.PlaylistRenamed(renamed), awaitItem())
+            coVerify { playlistRepository.updatePlaylist(renamed) }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun deletePlaylist_emitsDeletedEvent() = runTest {
         val playlist = Playlist(id = 4L, name = "删除")
         coEvery { playlistRepository.deletePlaylist(playlist) } returns Unit

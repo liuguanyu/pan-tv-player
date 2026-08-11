@@ -4,17 +4,19 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
+import android.text.InputType
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.GridLayoutManager
 import com.baidu.tv.player.kt.R
 import com.baidu.tv.player.kt.auth.BaiduAuthService
 import com.baidu.tv.player.kt.databinding.FragmentMainBinding
@@ -39,6 +41,12 @@ class MainFragment : Fragment() {
     private val playlistAdapter = PlaylistAdapter { authService.getAccessToken() }
     private val recentTaskAdapter = RecentTaskAdapter { authService.getAccessToken() }
 
+    private var selectedSection = HomeSection.PLAYLISTS
+    private var playlistsEmpty = true
+    private var recentTasksEmpty = true
+    private var playlistCardFocused = false
+    private var recentCardFocused = false
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentMainBinding.inflate(inflater, container, false)
         return binding.root
@@ -46,22 +54,29 @@ class MainFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        selectedSection = savedInstanceState?.getString(STATE_SECTION)
+            ?.let { runCatching { HomeSection.valueOf(it) }.getOrNull() }
+            ?: HomeSection.PLAYLISTS
         setupRecyclerViews()
         setupActions()
+        renderSelectedSection(requestFocus = false)
         collectViewModel()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(STATE_SECTION, selectedSection.name)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onResume() {
         super.onResume()
         view?.isFocusableInTouchMode = true
-        view?.requestFocus()
         view?.setOnKeyListener { _, keyCode, event ->
             if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             when (keyCode) {
                 KeyEvent.KEYCODE_MENU -> {
-                    // 焦点在播放列表卡片上时，菜单键呼出该卡片的操作菜单；其余场景打开设置。
                     val focused = playlistAdapter.focusedPlaylist
-                    if (focused != null) {
+                    if (selectedSection == HomeSection.PLAYLISTS && focused != null) {
                         showPlaylistActions(focused)
                     } else {
                         openSettings()
@@ -90,32 +105,31 @@ class MainFragment : Fragment() {
     }
 
     private fun setupRecyclerViews() {
-        binding.rvPlaylists.layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+        binding.rvPlaylists.layoutManager = GridLayoutManager(requireContext(), GRID_COLUMNS)
         binding.rvPlaylists.adapter = playlistAdapter
         binding.rvPlaylists.setHasFixedSize(true)
         binding.rvPlaylists.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
 
-        binding.rvRecentTasks.layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+        binding.rvRecentTasks.layoutManager = GridLayoutManager(requireContext(), GRID_COLUMNS)
         binding.rvRecentTasks.adapter = recentTaskAdapter
         binding.rvRecentTasks.setHasFixedSize(true)
         binding.rvRecentTasks.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
     }
 
     private fun setupActions() {
+        binding.tabPlaylists.setOnClickListener { selectSection(HomeSection.PLAYLISTS) }
+        binding.tabRecent.setOnClickListener { selectSection(HomeSection.RECENT) }
+
         playlistAdapter.onItemClick = { playlist -> openPlaylist(playlist) }
-        // TV 遥控器快捷操作：卡片短按播放，长按直接同步网盘目录，无需进入卡片内部移动焦点。
         playlistAdapter.onItemLongClick = { playlist -> viewModel.refreshPlaylist(playlist) }
         playlistAdapter.onDeleteClick = { playlist -> confirmDeletePlaylist(playlist) }
-
-        recentTaskAdapter.onItemClick = { history ->
-            // TODO Phase 5: PlaybackActivity 迁移后补齐播放历史恢复逻辑。
-            startActivity(Intent(requireContext(), PlaybackActivity::class.java).putExtra("historyId", history.id))
-        }
-
-        // 底部提示条随焦点位置切换。
         playlistAdapter.onItemFocusChange = { focused ->
             playlistCardFocused = focused != null
             updateHint()
+        }
+
+        recentTaskAdapter.onItemClick = { history ->
+            startActivity(Intent(requireContext(), PlaybackActivity::class.java).putExtra("historyId", history.id))
         }
         recentTaskAdapter.onItemFocusChange = { hasFocus ->
             recentCardFocused = hasFocus
@@ -123,7 +137,6 @@ class MainFragment : Fragment() {
         }
 
         binding.btnBrowseFiles.setOnClickListener {
-            // TODO Phase 4: FileBrowserActivity 迁移后补齐浏览业务。
             startActivity(
                 Intent(requireContext(), FileBrowserActivity::class.java)
                     .putExtra("mediaType", MediaType.ALL.value)
@@ -141,13 +154,17 @@ class MainFragment : Fragment() {
                 launch {
                     viewModel.playlists.collect { playlists ->
                         playlistAdapter.setPlaylists(playlists)
-                        renderPlaylistEmptyState(playlists.isEmpty())
+                        playlistsEmpty = playlists.isEmpty()
+                        binding.tabPlaylists.text = getString(R.string.home_tab_count, getString(R.string.my_playlists), playlists.size)
+                        renderSelectedSection(requestFocus = false)
                     }
                 }
                 launch {
                     viewModel.recentTasks.collect { history ->
                         recentTaskAdapter.setHistoryList(history)
-                        renderRecentEmptyState(history.isEmpty())
+                        recentTasksEmpty = history.isEmpty()
+                        binding.tabRecent.text = getString(R.string.home_tab_count, getString(R.string.recent_tasks), history.size)
+                        renderSelectedSection(requestFocus = false)
                     }
                 }
                 launch { viewModel.events.collect(::handleEvent) }
@@ -155,15 +172,28 @@ class MainFragment : Fragment() {
         }
     }
 
-    private fun renderPlaylistEmptyState(isEmpty: Boolean) {
-        binding.emptyPlaylist.visibility = if (isEmpty) View.VISIBLE else View.GONE
-        binding.rvPlaylists.visibility = if (isEmpty) View.GONE else View.VISIBLE
-        requestFocusOnVisibleElement()
+    private fun selectSection(section: HomeSection) {
+        if (selectedSection == section) {
+            requestFocusOnVisibleElement()
+            return
+        }
+        selectedSection = section
+        playlistAdapter.setEditMode(false)
+        playlistCardFocused = false
+        recentCardFocused = false
+        renderSelectedSection(requestFocus = true)
+        updateHint()
     }
 
-    private fun renderRecentEmptyState(isEmpty: Boolean) {
-        binding.emptyRecent.visibility = if (isEmpty) View.VISIBLE else View.GONE
-        binding.rvRecentTasks.visibility = if (isEmpty) View.GONE else View.VISIBLE
+    private fun renderSelectedSection(requestFocus: Boolean) {
+        val showPlaylists = selectedSection == HomeSection.PLAYLISTS
+        binding.tabPlaylists.isActivated = showPlaylists
+        binding.tabRecent.isActivated = !showPlaylists
+        binding.rvPlaylists.visibility = if (showPlaylists && !playlistsEmpty) View.VISIBLE else View.GONE
+        binding.emptyPlaylist.visibility = if (showPlaylists && playlistsEmpty) View.VISIBLE else View.GONE
+        binding.rvRecentTasks.visibility = if (!showPlaylists && !recentTasksEmpty) View.VISIBLE else View.GONE
+        binding.emptyRecent.visibility = if (!showPlaylists && recentTasksEmpty) View.VISIBLE else View.GONE
+        if (requestFocus) requestFocusOnVisibleElement()
     }
 
     private fun handleEvent(event: MainUiEvent) {
@@ -174,7 +204,6 @@ class MainFragment : Fragment() {
             }
             is MainUiEvent.RefreshSucceeded -> {
                 playlistAdapter.setRefreshing(event.playlist.id, false)
-                // event.playlist 是刷新发起时的快照，totalItems 为同步前的文件数，可算出增量。
                 val delta = event.itemCount - event.playlist.totalItems
                 val message = when {
                     delta > 0 -> "同步完成，新增${delta}个文件"
@@ -187,13 +216,17 @@ class MainFragment : Fragment() {
                 playlistAdapter.setRefreshing(event.playlist.id, false)
                 Toast.makeText(requireContext(), event.message, Toast.LENGTH_LONG).show()
             }
+            is MainUiEvent.PlaylistRenamed -> Toast.makeText(
+                requireContext(),
+                R.string.playlist_rename_success,
+                Toast.LENGTH_SHORT,
+            ).show()
             is MainUiEvent.PlaylistDeleted -> playlistAdapter.setEditMode(false)
             is MainUiEvent.Error -> Toast.makeText(requireContext(), event.message, Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun openCreatePlaylist() {
-        // TODO Phase 4: FileBrowserActivity 迁移后补齐播放列表创建结果返回。
         @Suppress("DEPRECATION")
         startActivityForResult(
             Intent(requireContext(), FileBrowserActivity::class.java)
@@ -203,12 +236,12 @@ class MainFragment : Fragment() {
     }
 
     private fun openPlaylist(playlist: Playlist) {
-        // TODO Phase 5: PlaybackActivity 迁移后补齐播放列表播放逻辑。
         startActivity(Intent(requireContext(), PlaybackActivity::class.java).putExtra("playlistDatabaseId", playlist.id))
     }
 
     private fun showPlaylistActions(playlist: Playlist) {
         val actions = arrayOf(
+            getString(R.string.playlist_action_rename),
             getString(R.string.playlist_action_refresh),
             getString(R.string.playlist_action_delete),
         )
@@ -216,12 +249,42 @@ class MainFragment : Fragment() {
             .setTitle(playlist.name)
             .setItems(actions) { _, which ->
                 when (which) {
-                    0 -> viewModel.refreshPlaylist(playlist)
-                    1 -> confirmDeletePlaylist(playlist)
+                    0 -> showRenamePlaylistDialog(playlist)
+                    1 -> viewModel.refreshPlaylist(playlist)
+                    2 -> confirmDeletePlaylist(playlist)
                 }
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    private fun showRenamePlaylistDialog(playlist: Playlist) {
+        val input = EditText(requireContext()).apply {
+            setText(playlist.name)
+            setSelection(text.length)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            isSingleLine = true
+            setSelectAllOnFocus(false)
+        }
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(R.string.playlist_rename_title)
+            .setView(input)
+            .setPositiveButton(R.string.confirm, null)
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val newName = input.text.toString().trim()
+                if (newName.isEmpty()) {
+                    input.error = getString(R.string.playlist_rename_empty)
+                } else {
+                    viewModel.renamePlaylist(playlist, newName)
+                    dialog.dismiss()
+                }
+            }
+            input.requestFocus()
+        }
+        dialog.show()
     }
 
     private fun updateHint() {
@@ -238,22 +301,26 @@ class MainFragment : Fragment() {
             .setTitle("删除播放列表")
             .setMessage("确定要删除播放列表\"${playlist.name}\"吗？此操作不会删除网盘中的文件。")
             .setPositiveButton("删除") { _, _ -> viewModel.deletePlaylist(playlist) }
-            .setNegativeButton("取消", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
     private fun openSettings() {
-        // TODO Phase 6: SettingsActivity 迁移实际设置业务。
         startActivity(Intent(requireContext(), SettingsActivity::class.java))
     }
 
     private fun requestFocusOnVisibleElement() {
         binding.root.post {
-            when {
-                binding.rvPlaylists.visibility == View.VISIBLE && playlistAdapter.itemCount > 0 -> binding.rvPlaylists.requestFocus()
-                // 列表为空时把焦点落在空态的主行动按钮上，引导用户直接创建。
-                binding.emptyPlaylist.visibility == View.VISIBLE -> binding.btnEmptyCreate.requestFocus()
-                else -> binding.btnBrowseFiles.requestFocus()
+            when (selectedSection) {
+                HomeSection.PLAYLISTS -> when {
+                    !playlistsEmpty && playlistAdapter.itemCount > 0 -> binding.rvPlaylists.requestFocus()
+                    binding.emptyPlaylist.visibility == View.VISIBLE -> binding.btnEmptyCreate.requestFocus()
+                    else -> binding.tabPlaylists.requestFocus()
+                }
+                HomeSection.RECENT -> when {
+                    !recentTasksEmpty && recentTaskAdapter.itemCount > 0 -> binding.rvRecentTasks.requestFocus()
+                    else -> binding.tabRecent.requestFocus()
+                }
             }
         }
     }
@@ -262,14 +329,17 @@ class MainFragment : Fragment() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_CREATE_PLAYLIST && resultCode == Activity.RESULT_OK) {
+            selectedSection = HomeSection.PLAYLISTS
+            renderSelectedSection(requestFocus = true)
             Toast.makeText(requireContext(), "播放列表已创建", Toast.LENGTH_SHORT).show()
         }
     }
 
+    private enum class HomeSection { PLAYLISTS, RECENT }
+
     companion object {
         private const val REQUEST_CREATE_PLAYLIST = 1001
+        private const val GRID_COLUMNS = 4
+        private const val STATE_SECTION = "home_section"
     }
-
-    private var playlistCardFocused = false
-    private var recentCardFocused = false
 }

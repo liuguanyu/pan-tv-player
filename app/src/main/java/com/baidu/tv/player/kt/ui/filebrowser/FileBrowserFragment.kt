@@ -13,7 +13,9 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.baidu.tv.player.kt.R
 import com.baidu.tv.player.kt.databinding.FragmentFileBrowserBinding
 import com.baidu.tv.player.kt.model.MediaType
 import com.baidu.tv.player.kt.ui.playback.PlaybackActivity
@@ -62,6 +64,7 @@ class FileBrowserFragment : Fragment() {
 
     override fun onDestroyView() {
         binding.gridFiles.adapter = null
+        binding.gridFiles.layoutManager = null
         _binding = null
         super.onDestroyView()
     }
@@ -93,6 +96,7 @@ class FileBrowserFragment : Fragment() {
     private fun setupActions() {
         binding.btnRecursive.setOnClickListener { viewModel.toggleRecursive() }
         binding.btnSort.setOnClickListener { viewModel.toggleSortMode() }
+        binding.btnViewMode.setOnClickListener { viewModel.toggleViewMode() }
         binding.btnPlaySelected.setOnClickListener {
             if (viewModel.uiState.value.multiSelectMode) viewModel.confirmSelection() else viewModel.playCurrentList()
         }
@@ -114,6 +118,21 @@ class FileBrowserFragment : Fragment() {
         binding.tvEmptyMessage.text = state.errorMessage ?: "暂无文件"
         binding.btnRecursive.text = if (state.isRecursive) "递归加载: 开" else "递归加载: 关"
         binding.btnSort.text = state.sortMode.label
+        binding.btnViewMode.text = getString(
+            if (state.isGridMode) R.string.file_browser_list_view else R.string.file_browser_grid_view,
+        )
+        binding.btnViewMode.setCompoundDrawablesWithIntrinsicBounds(
+            if (state.isGridMode) R.drawable.ic_view_list else R.drawable.ic_view_grid,
+            0,
+            0,
+            0,
+        )
+        if (state.isGridMode && binding.gridFiles.layoutManager !is GridLayoutManager) {
+            binding.gridFiles.layoutManager = GridLayoutManager(requireContext(), GRID_COLUMNS)
+        } else if (!state.isGridMode && binding.gridFiles.layoutManager is GridLayoutManager) {
+            binding.gridFiles.layoutManager = LinearLayoutManager(requireContext())
+        }
+        adapter.setGridMode(state.isGridMode)
         binding.btnPlaySelected.text = if (state.multiSelectMode) "确认选择" else "播放当前列表"
         binding.btnPlaySelected.isEnabled = !state.isLoading && !state.isCreatingPlaylist
         adapter.setMultiSelectMode(state.multiSelectMode)
@@ -169,6 +188,8 @@ class FileBrowserFragment : Fragment() {
     }
 
     companion object {
+        private const val GRID_COLUMNS = 4
+
         fun newInstance(
             mediaType: Int = MediaType.ALL.value,
             initialPath: String = "/",
