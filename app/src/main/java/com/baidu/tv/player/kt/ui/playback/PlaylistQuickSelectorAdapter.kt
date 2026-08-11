@@ -43,6 +43,19 @@ class PlaylistQuickSelectorAdapter : RecyclerView.Adapter<PlaylistQuickSelectorA
         return items.indexOfFirst { it.stableKey() == key }
     }
 
+    /** 播放项切换后同步当前高亮，只刷新旧项和新项，避免焦点跳动。 */
+    fun setHighlightedFile(file: FileInfo?) {
+        val oldKey = highlightedFileKey
+        val newKey = file?.stableKey()
+        if (oldKey == newKey) return
+        highlightedFileKey = newKey
+        items.forEachIndexed { position, item ->
+            if (item.stableKey() == oldKey || item.stableKey() == newKey) {
+                notifyItemChanged(position)
+            }
+        }
+    }
+
     /** 只刷新新增缩略图对应的卡片，避免 notifyDataSetChanged 导致当前焦点节点被重新绑定。 */
     fun updateThumbnails(thumbnails: Map<Long, String>) {
         thumbnails.forEach { (fsId, url) ->

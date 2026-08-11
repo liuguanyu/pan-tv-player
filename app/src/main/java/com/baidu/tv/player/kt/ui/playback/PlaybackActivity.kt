@@ -210,6 +210,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         }
         if (infoVisible) renderInfoPanel(state)
         refreshPresentationIfNeeded(state)
+        if (quickSelectorVisible) selectAdapter.setHighlightedFile(state.currentFile)
         // 初始化失败（如播放列表为空）时事件可能在订阅前已丢失，这里按状态兜底提示并退出。
         if (!state.hasPlaylist && !state.isLoading && state.errorMessage != null && !fatalErrorShown) {
             fatalErrorShown = true
@@ -710,6 +711,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
                 else candidate.path == selectedFile.path
             }
             if (originalIndex >= 0) {
+                selectAdapter.setHighlightedFile(selectedFile)
                 hideQuickSelector()
                 viewModel.playFromIndex(originalIndex)
             }
