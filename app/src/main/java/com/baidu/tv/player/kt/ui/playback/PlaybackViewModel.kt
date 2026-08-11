@@ -172,6 +172,7 @@ class PlaybackViewModel @Inject constructor(
         mediaType: Int,
         folderPath: String,
         startIndex: Int,
+        selectedPath: String? = null,
     ) {
         if (_uiState.value.files.isNotEmpty()) return
         val files = playlistCache.getAndRemove(playlistId).orEmpty()
@@ -179,7 +180,9 @@ class PlaybackViewModel @Inject constructor(
             emitError("播放列表为空")
             return
         }
-        val safeIndex = resolveStartIndex(files.size, startIndex)
+        val selectedIndex = selectedPath
+            ?.let { path -> files.indexOfFirst { it.path == path }.takeIf { it >= 0 } }
+        val safeIndex = selectedIndex ?: resolveStartIndex(files.size, startIndex)
         val folderName = folderPath.trimEnd('/').substringAfterLast('/').ifEmpty { folderPath }
         _uiState.update {
             it.copy(

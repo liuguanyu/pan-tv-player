@@ -104,7 +104,17 @@ class FileBrowserViewModel @Inject constructor(
         val playableFiles = uiState.value.files.filterNot { it.isDirectory() }
         val startIndex = playableFiles.indexOfFirst { it.path == file.path }.coerceAtLeast(0)
         if (playableFiles.isNotEmpty()) {
-            viewModelScope.launch { _events.emit(FileBrowserUiEvent.OpenPlayback(playableFiles, startIndex, uiState.value.currentPath, mediaType)) }
+            viewModelScope.launch {
+                _events.emit(
+                    FileBrowserUiEvent.OpenPlayback(
+                        files = playableFiles,
+                        startIndex = startIndex,
+                        selectedPath = file.path,
+                        folderPath = uiState.value.currentPath,
+                        mediaType = mediaType,
+                    ),
+                )
+            }
         }
     }
 
@@ -316,7 +326,13 @@ enum class SortMode(val label: String) {
 }
 
 sealed interface FileBrowserUiEvent {
-    data class OpenPlayback(val files: List<FileInfo>, val startIndex: Int, val folderPath: String, val mediaType: Int) : FileBrowserUiEvent
+    data class OpenPlayback(
+        val files: List<FileInfo>,
+        val startIndex: Int,
+        val folderPath: String,
+        val mediaType: Int,
+        val selectedPath: String? = null,
+    ) : FileBrowserUiEvent
     data object PlaylistCreationStarted : FileBrowserUiEvent
     data class PlaylistCreationSucceeded(val playlistId: Long, val itemCount: Int) : FileBrowserUiEvent
     data class PlaylistCreationFailed(val message: String) : FileBrowserUiEvent

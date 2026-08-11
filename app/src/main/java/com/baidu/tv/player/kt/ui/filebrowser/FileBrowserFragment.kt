@@ -176,7 +176,8 @@ class FileBrowserFragment : Fragment() {
                 .putExtra("playlistId", playlistId)
                 .putExtra("mediaType", event.mediaType)
                 .putExtra("folderPath", event.folderPath)
-                .putExtra("startIndex", event.startIndex),
+                .putExtra("startIndex", event.startIndex)
+                .putExtra("selectedPath", event.selectedPath),
         )
     }
 

@@ -56,6 +56,7 @@ private const val SEEK_STEP_MS = 10_000L
 private const val PROGRESS_INTERVAL_MS = 1_000L
 private const val THUMBNAIL_CAPTURE_RETRIES = 5
 private const val THUMBNAIL_CAPTURE_DELAY_MS = 800L
+private const val FIRST_PLAY_RETRY_DELAY_MS = 600L
 private const val TAG = "PlaybackActivity"
 
 /**
@@ -79,6 +80,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     private var autoHideJob: Job? = null
     private var progressJob: Job? = null
     private var pendingVideo: Pair<String, FileInfo>? = null
+    /** 首次启动可能遇到 Surface/解码器尚未稳定，只对同一文件自动重试一次。 */
+    private var retriedFilePath: String? = null
     private var fatalErrorShown = false
     private var resumePlaybackOnReturn = false
     private var videoOutputSurface: Surface? = null
@@ -109,6 +112,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
                 mediaType = intent.getIntExtra("mediaType", MediaType.ALL.code),
                 folderPath = intent.getStringExtra("folderPath").orEmpty(),
                 startIndex = intent.getIntExtra("startIndex", 0),
+                selectedPath = intent.getStringExtra("selectedPath"),
             )
         }
     }
@@ -261,7 +265,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
             }
             is PlaybackResult.Error -> {
                 binding.loadingProgress.visibility = View.GONE
-                showToastAndSkip(result.cause.message ?: "播放失败")
+                retryOrSkip(result.cause.message ?: "播放失败")
             }
         }
     }
@@ -398,7 +402,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
                         viewModel.setPlaying(true)
                         startProgressUpdates()
                     } else {
-                        showToastAndSkip("强制播放失败")
+                        retryOrSkip("强制播放失败")
                     }
                 }
             }
@@ -711,11 +715,11 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     }
 
     override fun onError(error: androidx.media3.common.PlaybackException) {
-        showToastAndSkip(error.message ?: "播放错误")
+        retryOrSkip(error.message ?: "播放错误")
     }
 
     override fun onUnsupported(reason: UnsupportedReason) {
-        showToastAndSkip(
+        retryOrSkip(
             when (reason) {
                 UnsupportedReason.DOLBY_VISION -> "当前视频为 Dolby Vision，设备不支持，已跳过"
                 UnsupportedReason.HEVC_10BIT -> "当前视频为 HEVC 10-bit，设备不支持，已跳过"
@@ -725,9 +729,22 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         )
     }
 
-    private fun showToastAndSkip(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-        viewModel.playNext()
+    private fun retryOrSkip(message: String) {
+        val path = viewModel.uiState.value.currentFile?.path
+        if (!path.isNullOrBlank() && retriedFilePath != path) {
+            retriedFilePath = path
+            Log.w(TAG, "首播失败，重试当前文件一次: $path, reason=$message")
+            Toast.makeText(this, "播放初始化失败，正在重试…", Toast.LENGTH_SHORT).show()
+            lifecycleScope.launch {
+                delay(FIRST_PLAY_RETRY_DELAY_MS)
+                if (!isFinishing && !isDestroyed && viewModel.uiState.value.currentFile?.path == path) {
+                    viewModel.retryCurrent()
+                }
+            }
+        } else {
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            viewModel.playNext()
+        }
     }
 
     private fun buildRequestHeaders(): Map<String, String> = mapOf("User-Agent" to "pan.baidu.com")
