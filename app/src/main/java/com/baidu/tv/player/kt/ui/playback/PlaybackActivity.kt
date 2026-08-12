@@ -26,24 +26,19 @@ import com.baidu.tv.player.kt.R
 import com.baidu.tv.player.kt.databinding.ActivityPlaybackBinding
 import com.baidu.tv.player.kt.model.FileInfo
 import com.baidu.tv.player.kt.model.MediaType
-import com.baidu.tv.player.kt.player.BackgroundAudioPlayer
+import com.baidu.tv.player.kt.player.BackgroundMusicCoordinator
 import com.baidu.tv.player.kt.player.HybridVideoPlayerEngine
 import com.baidu.tv.player.kt.player.Media3VideoPlayerEngine
 import com.baidu.tv.player.kt.player.PlaybackResult
 import com.baidu.tv.player.kt.player.UnsupportedReason
 import com.baidu.tv.player.kt.player.VideoPlayerEngine
-import com.baidu.tv.player.kt.player.computeBgmAction
-import com.baidu.tv.player.kt.player.BgmTargetAction
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.baidu.tv.player.kt.auth.BaiduAuthService
 import com.baidu.tv.player.kt.repository.FileRepository
-import com.baidu.tv.player.kt.repository.PlayableUrlResolver
-import com.baidu.tv.player.kt.repository.BgmSelection
 import com.baidu.tv.player.kt.repository.SettingsRepository
 import com.baidu.tv.player.kt.ui.playback.image.ImageBackgroundFactory
 import com.baidu.tv.player.kt.ui.playback.image.ImageEffectFactory
-import kotlinx.coroutines.CancellationException
 import com.baidu.tv.player.kt.ui.settings.SettingsActivity
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.target.BitmapImageViewTarget
@@ -84,7 +79,6 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     @Inject lateinit var authService: BaiduAuthService
     @Inject lateinit var fileRepository: FileRepository
     @Inject lateinit var settingsRepository: SettingsRepository
-    @Inject lateinit var urlResolver: PlayableUrlResolver
 
     private var controlsVisible = false
     private var quickSelectorVisible = false
@@ -101,12 +95,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     private var lastPresentationState: Pair<Int, String>? = null
     private var quickSelectorCurrentKey: String? = null
     private var quickSelectorDataKey: String? = null
-    @Inject lateinit var backgroundMusicPlayer: BackgroundAudioPlayer
-    private var bgmSelectionKey: Long = 0L
-    private var bgmUrl: String? = null
-    private var bgmResolveJob: Job? = null
-    private var bgmPausedByLifecycle = false
-    private var bgmSelection: BgmSelection? = null
+    @Inject lateinit var bgmCoordinator: BackgroundMusicCoordinator
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -182,8 +171,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
                 }
                 launch {
                     settingsRepository.bgm.collect { selection ->
-                        bgmSelection = selection
-                        syncBackgroundMusic(viewModel.uiState.value)
+                        bgmCoordinator.setSelection(selection, buildRequestHeaders())
                     }
                 }
             }
@@ -234,7 +222,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         }
         if (infoVisible) renderInfoPanel(state)
         refreshPresentationIfNeeded(state)
-        syncBackgroundMusic(state)
+        bgmCoordinator.onPlaybackStateChanged(state)
         if (quickSelectorVisible) syncQuickSelectorToCurrent(state.currentFile)
         // 初始化失败（如播放列表为空）时事件可能在订阅前已丢失，这里按状态兜底提示并退出。
         if (!state.hasPlaylist && !state.isLoading && state.errorMessage != null && !fatalErrorShown) {
@@ -254,7 +242,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     }
 
     private suspend fun playVideo(url: String, file: FileInfo) {
-        backgroundMusicPlayer.pause()
+        bgmCoordinator.pause()
         pendingVideo = url to file
         binding.imageDisplay.visibility = View.GONE
         // 播放启动路径不要同步抓取 TextureView 全尺寸画面；4K 帧复制会阻塞主线程并显著拖慢加载。
@@ -422,49 +410,6 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { byte -> "%02x".format(byte) }
-
-    private fun syncBackgroundMusic(state: PlaybackUiState) {
-        val selection = bgmSelection
-        if (selection == null) {
-            bgmResolveJob?.cancel()
-            bgmUrl = null
-            bgmSelectionKey = 0L
-            backgroundMusicPlayer.stop()
-            return
-        }
-        // 解析新选择的 BGM：只在成功后才更新 bgmSelectionKey，使失败后可重试。
-        if (selection.fsId != bgmSelectionKey) {
-            bgmResolveJob?.cancel()
-            bgmUrl = null
-            backgroundMusicPlayer.stop()
-            bgmResolveJob = lifecycleScope.launch {
-                try {
-                    val url = urlResolver.resolve(selection.fsId, dlink = null, serverFilename = null)
-                    bgmUrl = url
-                    bgmSelectionKey = selection.fsId
-                    val action = computeBgmAction(state, hasBgmSelection = true, isBgmResolved = true, isForeground = !bgmPausedByLifecycle)
-                    if (action == BgmTargetAction.PLAY) {
-                        backgroundMusicPlayer.play(url, buildRequestHeaders())
-                    }
-                } catch (c: CancellationException) {
-                    throw c
-                } catch (e: Exception) {
-                    Log.w(TAG, "背景音乐加载失败", e)
-                }
-            }
-            return
-        }
-        // 已解析完成的选择：根据决策函数执行动作
-        if (bgmUrl != null) {
-            val action = computeBgmAction(state, hasBgmSelection = true, isBgmResolved = true, isForeground = !bgmPausedByLifecycle)
-            when (action) {
-                BgmTargetAction.PLAY -> backgroundMusicPlayer.play(bgmUrl!!, buildRequestHeaders())
-                BgmTargetAction.PAUSE -> backgroundMusicPlayer.pause()
-                BgmTargetAction.STOP -> backgroundMusicPlayer.stop()
-                BgmTargetAction.NONE -> { }
-            }
-        }
-    }
 
     private fun applyImagePresentation(bitmap: Bitmap) {
         val state = viewModel.uiState.value
@@ -932,11 +877,11 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
 
     override fun onResume() {
         super.onResume()
-        bgmPausedByLifecycle = false
+        bgmCoordinator.onForegroundChanged(true)
         hideSystemBars()
         val state = viewModel.uiState.value
         refreshPresentationIfNeeded(state)
-        syncBackgroundMusic(state)
+        bgmCoordinator.onPlaybackStateChanged(state)
         if (resumePlaybackOnReturn && state.isCurrentVideo && state.contentReady) {
             videoPlayerEngine.resume()
         }
@@ -945,8 +890,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
 
     override fun onPause() {
         resumePlaybackOnReturn = viewModel.uiState.value.isCurrentVideo && videoPlayerEngine.isPlaying()
-        bgmPausedByLifecycle = true
-        backgroundMusicPlayer.pause()
+        bgmCoordinator.onForegroundChanged(false)
+        bgmCoordinator.pause()
         videoPlayerEngine.pause()
         super.onPause()
     }
@@ -962,8 +907,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         // 只 stop 不 release：引擎为进程级单例（复用底层 LibVLC 原生对象），
         // release() 会销毁原生 LibVLC，Activity 重建后再用会崩溃/触发 finalizer 断言。
         videoPlayerEngine.stop()
-        backgroundMusicPlayer.release()
-        bgmResolveJob?.cancel()
+        bgmCoordinator.release()
         videoOutputSurface?.release()
         videoOutputSurface = null
         super.onDestroy()

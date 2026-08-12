@@ -44,12 +44,12 @@
 
 ## 6. 提取 BackgroundMusicCoordinator
 
-- [ ] 6.1 为 Disabled、Resolving、Ready、Failed sealed state 编写状态转换测试
-- [ ] 6.2 为图片播放/暂停、视频切换、前后台和用户暂停意图编写 Fake Player 测试矩阵
-- [ ] 6.3 为 A 切 B、解析期间关闭、旧结果晚到、失败重试和取消传播编写并发测试
-- [ ] 6.4 实现 BackgroundMusicCoordinator并接入 Resolver、Settings flow 和 BackgroundAudioPlayer
-- [ ] 6.5 将 Activity 的 BGM字段和 syncBackgroundMusic 逻辑迁移到 Coordinator 委托
-- [ ] 6.6 删除旧 BGM状态路径并确认生产环境仅由 Coordinator 驱动播放器
+- [x] 6.1 为 Disabled、Resolving、Ready、Failed sealed state 编写状态转换测试
+- [x] 6.2 为图片播放/暂停、视频切换、前后台和用户暂停意图编写 Fake Player 测试矩阵
+- [x] 6.3 为 A 切 B、解析期间关闭、旧结果晚到、失败重试和取消传播编写并发测试
+- [x] 6.4 实现 BackgroundMusicCoordinator并接入 Resolver、Settings flow 和 BackgroundAudioPlayer
+- [x] 6.5 将 Activity 的 BGM字段和 syncBackgroundMusic 逻辑迁移到 Coordinator 委托
+- [x] 6.6 删除旧 BGM状态路径并确认生产环境仅由 Coordinator 驱动播放器
 - [ ] 6.7 运行自动化门禁并在目标 TV 验证完整 BGM 生命周期矩阵
 
 ## 7. 提取 PlaybackSessionFactory
