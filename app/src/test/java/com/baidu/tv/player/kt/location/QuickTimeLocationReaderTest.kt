@@ -40,6 +40,22 @@ class QuickTimeLocationReaderTest {
     }
 
     @Test
+    fun readLocationString_scansAtomsWhenRangeResponseOmitsTotalSize() = runTest {
+        val location = "+39.1744+117.2056+004.822/"
+        val file = atom("ftyp", "qt  ".toByteArray(StandardCharsets.ISO_8859_1)) +
+            atom("mdat", ByteArray(3 * 1024 * 1024)) +
+            atom("moov", quickTimeMetaAtom("com.apple.quicktime.location.ISO6709" to location))
+        val server = MockWebServer()
+        server.dispatcher = rangeDispatcher(file, omitTotalOnInitialRequest = true)
+        server.start()
+        try {
+            assertEquals(location, reader.readLocationString(server.url("/iphone.mov").toString()))
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun parseMdtaLocation_readsIphoneQuickTimeLocationKey() {
         val meta = metaAtom(
             "com.apple.quicktime.make" to "Apple",
@@ -125,7 +141,10 @@ class QuickTimeLocationReaderTest {
     private fun intBytes(value: Int): ByteArray =
         ByteBuffer.allocate(4).order(ByteOrder.BIG_ENDIAN).putInt(value).array()
 
-    private fun rangeDispatcher(file: ByteArray): Dispatcher = object : Dispatcher() {
+    private fun rangeDispatcher(
+        file: ByteArray,
+        omitTotalOnInitialRequest: Boolean = false,
+    ): Dispatcher = object : Dispatcher() {
         override fun dispatch(request: RecordedRequest): MockResponse {
             val range = request.getHeader("Range") ?: return MockResponse().setResponseCode(400)
             val match = Regex("bytes=(\\d+)-(\\d+)").matchEntire(range)
@@ -137,7 +156,11 @@ class QuickTimeLocationReaderTest {
             val body = file.copyOfRange(start, end + 1)
             return MockResponse()
                 .setResponseCode(206)
-                .setHeader("Content-Range", "bytes $start-$end/${file.size}")
+                .apply {
+                    if (!(omitTotalOnInitialRequest && start == 0 && requestedEnd == 7)) {
+                        setHeader("Content-Range", "bytes $start-$end/${file.size}")
+                    }
+                }
                 .setBody(okio.Buffer().write(body))
         }
     }

@@ -31,16 +31,28 @@ class QuickTimeLocationReader @Inject constructor(
     suspend fun readLocationString(url: String): String? {
         Log.d(TAG, "开始 QuickTime Range 定位探测")
         val source = HttpRangeSource(rangeClient, url)
-        val fileSize = source.fileSize() ?: return null.also { Log.d(TAG, "无法获取媒体大小") }
-        val moov = findChild(source, 0L, fileSize, TYPE_MOOV)
+        val initialProbe = source.initialProbe()
+            ?: return null.also { Log.d(TAG, "首个 Range 请求失败，无法读取 atom") }
+        val scanEnd = initialProbe.totalSize ?: UNKNOWN_FILE_END
+        if (initialProbe.totalSize == null) Log.d(TAG, "响应未提供媒体总大小，改用 atom size 有界扫描")
+        val moov = findChild(source, 0L, scanEnd, TYPE_MOOV)
             ?: return null.also { Log.d(TAG, "未找到 moov atom") }
+        Log.d(TAG, "已找到 moov atom，大小=${moov.size}")
 
-        findMeta(source, moov)?.let { meta ->
-            parseMdtaLocation(source.readAtomBytes(meta, MAX_METADATA_ATOM_BYTES) ?: return@let null)
-                ?.let {
+        val meta = findMeta(source, moov)
+        if (meta == null) {
+            Log.d(TAG, "moov 中未找到 meta atom")
+        } else if (meta.size > MAX_METADATA_ATOM_BYTES) {
+            Log.d(TAG, "meta atom 超过读取上限，大小=${meta.size}")
+        } else {
+            val metaBytes = source.readAtomBytes(meta, MAX_METADATA_ATOM_BYTES)
+            when {
+                metaBytes == null -> Log.d(TAG, "meta atom Range 读取失败")
+                else -> parseMdtaLocation(metaBytes)?.let {
                     Log.d(TAG, "命中 Apple ISO6709 metadata")
                     return it
-                }
+                } ?: Log.d(TAG, "meta atom 已读取，但未解析到 Apple ISO6709 key")
+            }
         }
 
         // 兼容旧 QuickTime ©xyz UserData atom；官方 Android key 也以此为标准来源。
@@ -154,9 +166,9 @@ class QuickTimeLocationReader @Inject constructor(
         private val client: OkHttpClient,
         private val url: String,
     ) {
-        suspend fun fileSize(): Long? {
+        suspend fun initialProbe(): InitialProbe? {
             val response = requestRange(0L, ATOM_HEADER_BYTES - 1L) ?: return null
-            return response.totalSize
+            return InitialProbe(response.totalSize)
         }
 
         suspend fun readAtom(offset: Long, parentEnd: Long): Atom? {
@@ -181,7 +193,9 @@ class QuickTimeLocationReader @Inject constructor(
                     size = size32
                 }
             }
-            if (size < headerSize || offset + size > parentEnd) return null
+            if (size < headerSize || size > Long.MAX_VALUE - offset) return null
+            val endOffset = offset + size
+            if (parentEnd != UNKNOWN_FILE_END && endOffset > parentEnd) return null
             return Atom(offset, size, type, headerSize)
         }
 
@@ -200,21 +214,30 @@ class QuickTimeLocationReader @Inject constructor(
                 .get()
                 .build()
             return client.executeCancellable(request).use { response ->
-                if (!response.isSuccessful) return@use null
+                if (!response.isSuccessful) {
+                    Log.d(TAG, "Range 请求失败，code=${response.code}, start=$start")
+                    return@use null
+                }
                 // 非零偏移时服务器若忽略 Range，不能从头读取整个大文件来模拟 seek。
-                if (start > 0 && response.code != 206) return@use null
+                if (start > 0 && response.code != 206) {
+                    Log.d(TAG, "服务器忽略非零 Range，code=${response.code}, start=$start")
+                    return@use null
+                }
                 val requested = endInclusive - start + 1
                 val body = response.body ?: return@use null
                 val bytes = body.source().readByteArray(minOf(requested, MAX_SINGLE_RANGE_BYTES.toLong()))
                 val total = response.header("Content-Range")
                     ?.substringAfterLast('/')
                     ?.toLongOrNull()
-                    ?: response.header("Content-Length")?.toLongOrNull()
+                    ?: response.header("Content-Length")
+                        ?.toLongOrNull()
+                        ?.takeIf { response.code == 200 && start == 0L }
                 RangeResponse(bytes, total)
             }
         }
     }
 
+    private data class InitialProbe(val totalSize: Long?)
     private data class RangeResponse(val bytes: ByteArray, val totalSize: Long?)
     private data class Atom(val offset: Long, val size: Long, val type: String, val headerSize: Int) {
         val contentOffset: Long get() = offset + headerSize
@@ -239,6 +262,7 @@ class QuickTimeLocationReader @Inject constructor(
         private const val MAX_METADATA_ATOM_BYTES = 2 * 1024 * 1024
         private const val MAX_LEGACY_ATOM_BYTES = 64 * 1024
         private const val MAX_SINGLE_RANGE_BYTES = MAX_METADATA_ATOM_BYTES
+        private const val UNKNOWN_FILE_END = Long.MAX_VALUE
         private val ISO_6709_REGEX = Regex("[+-]\\d{1,3}(?:\\.\\d+)[+-]\\d{1,3}(?:\\.\\d+)(?:[+-]\\d+(?:\\.\\d+)?)?/")
 
         private fun hasValidAtomAt(bytes: ByteArray, offset: Int): Boolean {
