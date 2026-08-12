@@ -22,10 +22,18 @@ interface VideoMetadataReader {
     fun readDateString(url: String): String?
 }
 
-class DefaultVideoMetadataReader @Inject constructor() : VideoMetadataReader {
+class DefaultVideoMetadataReader @Inject constructor(
+    private val quickTimeLocationReader: QuickTimeLocationReader,
+) : VideoMetadataReader {
 
-    override fun readLocationString(url: String): String? =
-        readMetadata(url, MediaMetadataRetriever.METADATA_KEY_LOCATION)
+    override fun readLocationString(url: String): String? {
+        val platformLocation = try {
+            readMetadata(url, MediaMetadataRetriever.METADATA_KEY_LOCATION)
+        } catch (_: Exception) {
+            null
+        }
+        return platformLocation ?: quickTimeLocationReader.readLocationString(url)
+    }
 
     override fun readDateString(url: String): String? =
         readMetadata(url, MediaMetadataRetriever.METADATA_KEY_DATE)
@@ -35,7 +43,7 @@ class DefaultVideoMetadataReader @Inject constructor() : VideoMetadataReader {
         return try {
             // 远程 URL 直接作为数据源，MediaMetadataRetriever 会按需读取 metadata，
             // 不下载整段视频（对比 Java 版被移除的 2MB head/tail 文本搜索 hack）。
-            retriever.setDataSource(url, HashMap())
+            retriever.setDataSource(url, hashMapOf("User-Agent" to "pan.baidu.com"))
             retriever.extractMetadata(key)
         } finally {
             runCatching { retriever.release() }
