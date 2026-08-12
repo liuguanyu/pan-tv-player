@@ -32,8 +32,8 @@ class QuickTimeLocationReaderTest {
 
             assertEquals(location, result)
             val requests = server.requestCount
-            // 初始长度、ftyp、mdat、moov、meta、meta 内容；不会请求 3MB mdat payload。
-            assertEquals(6, requests)
+            // 初始长度、ftyp、mdat、moov header、完整 moov；不会请求 3MB mdat payload。
+            assertEquals(5, requests)
         } finally {
             server.shutdown()
         }

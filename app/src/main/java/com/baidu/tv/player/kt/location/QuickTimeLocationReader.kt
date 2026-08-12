@@ -38,44 +38,68 @@ class QuickTimeLocationReader @Inject constructor(
         val moov = findChild(source, 0L, scanEnd, TYPE_MOOV)
             ?: return null.also { Log.d(TAG, "未找到 moov atom") }
         Log.d(TAG, "已找到 moov atom，大小=${moov.size}")
-
-        val meta = findMeta(source, moov)
-        if (meta == null) {
-            Log.d(TAG, "moov 中未找到 meta atom")
-        } else if (meta.size > MAX_METADATA_ATOM_BYTES) {
-            Log.d(TAG, "meta atom 超过读取上限，大小=${meta.size}")
-        } else {
-            val metaBytes = source.readAtomBytes(meta, MAX_METADATA_ATOM_BYTES)
-            when {
-                metaBytes == null -> Log.d(TAG, "meta atom Range 读取失败")
-                else -> parseMdtaLocation(metaBytes)?.let {
-                    Log.d(TAG, "命中 Apple ISO6709 metadata")
-                    return it
-                } ?: Log.d(TAG, "meta atom 已读取，但未解析到 Apple ISO6709 key")
-            }
+        if (moov.size > MAX_METADATA_ATOM_BYTES) {
+            Log.d(TAG, "moov atom 超过读取上限，大小=${moov.size}")
+            return null
         }
 
-        // 兼容旧 QuickTime ©xyz UserData atom；官方 Android key 也以此为标准来源。
-        findDescendant(source, moov, TYPE_UDTA, TYPE_XYZ)?.let { xyz ->
-            parseLegacyXyz(source.readAtomBytes(xyz, MAX_LEGACY_ATOM_BYTES) ?: return@let null)
-                ?.let {
+        // 找到 moov 后一次性读取整个小型 metadata atom。后续全部在内存解析，
+        // 避免百度 CDN 因连续多个 16 字节 Range 请求而返回 403。
+        val moovBytes = source.readAtomBytes(moov, MAX_METADATA_ATOM_BYTES)
+            ?: return null.also { Log.d(TAG, "moov atom Range 读取失败") }
+        return parseMoovLocation(moovBytes)
+    }
+
+    internal fun parseMoovLocation(moovAtom: ByteArray): String? {
+        val moovHeader = atomHeaderSize(moovAtom, 0)
+            ?: return null.also { Log.d(TAG, "moov atom header 无效") }
+        val moovEnd = atomSize(moovAtom, 0)?.coerceAtMost(moovAtom.size)
+            ?: return null.also { Log.d(TAG, "moov atom size 无效") }
+
+        val directMeta = findChildInBytes(moovAtom, moovHeader, moovEnd, TYPE_META)
+        val udta = findChildInBytes(moovAtom, moovHeader, moovEnd, TYPE_UDTA)
+        val nestedMeta = udta?.let {
+            findChildInBytes(moovAtom, it.contentOffset, it.endOffset, TYPE_META)
+        }
+        val meta = directMeta ?: nestedMeta
+        if (meta == null) {
+            Log.d(TAG, "moov 中未找到 meta atom")
+        } else {
+            val metaBytes = moovAtom.copyOfRange(meta.offset, meta.endOffset)
+            parseMdtaLocation(metaBytes)?.let {
+                Log.d(TAG, "命中 Apple ISO6709 metadata")
+                return it
+            }
+            Log.d(TAG, "meta atom 已读取，但未解析到 Apple ISO6709 key")
+        }
+
+        // 兼容旧 QuickTime ©xyz UserData atom。
+        udta?.let {
+            findChildInBytes(moovAtom, it.contentOffset, it.endOffset, TYPE_XYZ)
+        }?.let { xyz ->
+            if (xyz.size <= MAX_LEGACY_ATOM_BYTES) {
+                parseLegacyXyz(moovAtom.copyOfRange(xyz.offset, xyz.endOffset))?.let {
                     Log.d(TAG, "命中 legacy ©xyz metadata")
                     return it
                 }
+            }
         }
         Log.d(TAG, "QuickTime metadata 中未发现有效位置")
         return null
     }
 
-    private suspend fun findMeta(source: HttpRangeSource, moov: Atom): Atom? =
-        findChild(source, moov.contentOffset, moov.endOffset, TYPE_META)
-            ?: findChild(source, moov.contentOffset, moov.endOffset, TYPE_UDTA)?.let { udta ->
-                findChild(source, udta.contentOffset, udta.endOffset, TYPE_META)
-            }
-
-    private suspend fun findDescendant(source: HttpRangeSource, parent: Atom, containerType: String, targetType: String): Atom? {
-        val container = findChild(source, parent.contentOffset, parent.endOffset, containerType) ?: return null
-        return findChild(source, container.contentOffset, container.endOffset, targetType)
+    private fun findChildInBytes(bytes: ByteArray, start: Int, end: Int, targetType: String): ByteArrayAtom? {
+        var offset = start
+        var count = 0
+        while (offset + ATOM_HEADER_BYTES <= end && count++ < MAX_CHILD_ATOMS) {
+            val size = atomSize(bytes, offset) ?: return null
+            if (size < ATOM_HEADER_BYTES || size > end - offset) return null
+            val headerSize = atomHeaderSize(bytes, offset) ?: return null
+            val atom = ByteArrayAtom(offset, size, atomType(bytes, offset), headerSize)
+            if (atom.type == targetType) return atom
+            offset = atom.endOffset
+        }
+        return null
     }
 
     private suspend fun findChild(source: HttpRangeSource, start: Long, end: Long, targetType: String): Atom? {
@@ -239,6 +263,10 @@ class QuickTimeLocationReader @Inject constructor(
 
     private data class InitialProbe(val totalSize: Long?)
     private data class RangeResponse(val bytes: ByteArray, val totalSize: Long?)
+    private data class ByteArrayAtom(val offset: Int, val size: Int, val type: String, val headerSize: Int) {
+        val contentOffset: Int get() = offset + headerSize
+        val endOffset: Int get() = offset + size
+    }
     private data class Atom(val offset: Long, val size: Long, val type: String, val headerSize: Int) {
         val contentOffset: Long get() = offset + headerSize
         val endOffset: Long get() = offset + size
