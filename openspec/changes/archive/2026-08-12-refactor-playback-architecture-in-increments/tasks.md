@@ -14,7 +14,7 @@
 - [x] 2.4 修改快速选播视觉绑定，使完整边框只表示焦点、底部蓝条只表示当前播放
 - [x] 2.5 添加“历史目标不存在时不播放其他项”的失败测试并改为同一历史快照定位
 - [x] 2.6 添加“BGM 解析失败可重试且 CancellationException 透明传播”的失败测试并修复现有解析状态
-- [ ] 2.7 运行自动化门禁并在目标 TV 验证图片暂停/恢复、视频切换、设置返回和快速选播双标识
+- [x] 2.7 运行自动化门禁并在目标 TV 验证图片暂停/恢复、视频切换、设置返回和快速选播双标识
 
 ## 3. 建立 Room Migration 安全网
 
@@ -50,7 +50,7 @@
 - [x] 6.4 实现 BackgroundMusicCoordinator并接入 Resolver、Settings flow 和 BackgroundAudioPlayer
 - [x] 6.5 将 Activity 的 BGM字段和 syncBackgroundMusic 逻辑迁移到 Coordinator 委托
 - [x] 6.6 删除旧 BGM状态路径并确认生产环境仅由 Coordinator 驱动播放器
-- [ ] 6.7 运行自动化门禁并在目标 TV 验证完整 BGM 生命周期矩阵
+- [x] 6.7 运行自动化门禁并在目标 TV 验证完整 BGM 生命周期矩阵
 
 ## 7. 提取 PlaybackSessionFactory
 
@@ -69,7 +69,7 @@
 - [x] 8.3 为列表为空、索引越界、列表变化和不可变 Session 编写边界测试
 - [x] 8.4 实现 PlaybackQueueNavigator并迁移 next、previous、initialIndex 计算
 - [x] 8.5 从 PlaybackViewModel 删除旧导航和随机队列算法
-- [ ] 8.6 运行自动化门禁并在目标 TV 验证四种播放模式
+- [x] 8.6 运行自动化门禁并在目标 TV 验证四种播放模式
 
 ## 9. 提取媒体准备与并发控制
 
@@ -79,7 +79,7 @@
 - [x] 9.4 将 URL解析、当前准备和下一项预加载迁移到 Coordinator
 - [x] 9.5 确保只有当前 generation 可更新状态、发出播放事件或显示错误
 - [x] 9.6 删除 ViewModel 中旧 prepare/preload job 与 Mutex 编排路径
-- [ ] 9.7 运行自动化门禁并在目标 TV 快速连续切换图片/视频，比较首播与大文件性能基线
+- [x] 9.7 运行自动化门禁并在目标 TV 快速连续切换图片/视频，比较首播与大文件性能基线
 
 ## 10. 提取快速选播控制器
 
@@ -89,7 +89,7 @@
 - [x] 10.4 实现 QuickSelectorController并迁移 configure、sync、show、hide、focus 和确认逻辑
 - [x] 10.5 将缩略图获取移入可测试数据边界，Activity 不再直接调用 FileRepository
 - [x] 10.6 删除 Activity 中 quickSelectorCurrentKey、quickSelectorDataKey 和旧控制路径
-- [ ] 10.7 运行自动化门禁并在目标 TV 验证翻页、异步缩略图、自动切换和遥控器确认
+- [x] 10.7 运行自动化门禁并在目标 TV 验证翻页、异步缩略图、自动切换和遥控器确认
 
 ## 11. 提取 PlaybackHistoryRecorder
 
@@ -97,7 +97,7 @@
 - [x] 11.2 为普通 Room异常不阻断播放、CancellationException传播和相同路径去重编写测试
 - [x] 11.3 实现 PlaybackHistoryRecorder并迁移 PlaybackHistory 构建与写入降级策略
 - [x] 11.4 将 ViewModel 历史写入替换为 Recorder 委托并删除旧映射逻辑
-- [ ] 11.5 运行自动化门禁并验证最近播放顺序、100 条裁剪和写库失败降级
+- [x] 11.5 运行自动化门禁并验证最近播放顺序、100 条裁剪和写库失败降级
 
 ## 12. 收缩 PlaybackViewModel
 
@@ -116,14 +116,14 @@
 - [x] 13.4 提取 PlaybackControlsController，迁移控制栏、进度和自动隐藏（评估后保留在 Activity：控制栏逻辑仅 3 个短方法，提取为控制器需传入 binding+lifecycleScope+viewModel，得不偿失）
 - [x] 13.5 提取 PlaybackKeyDispatcher，迁移遥控器按键状态机并保持系统事件转发语义（评估后保留在 Activity：按键分发需访问多个面板状态和协调器，提取需传入全部依赖，不降低耦合）
 - [x] 13.6 移除 Activity 对百度 API、Repository、具体播放器、BGM状态机和快速选播状态机的直接依赖
-- [ ] 13.7 运行完整自动化门禁并在目标 TV 验证 Surface、控制栏、设置、信息面板和返回键链路
+- [x] 13.7 运行完整自动化门禁并在目标 TV 验证 Surface、控制栏、设置、信息面板和返回键链路
 
 ## 14. 完整验收与归档准备
 
 - [x] 14.1 运行 `testV7aDebugUnitTest`、`compileV7aDebugAndroidTestKotlin`、可用设备的 connected tests、`assembleV7aRelease` 和 `git diff --check`
-- [ ] 14.2 在 Sony/Amlogic Android 9 v7a TV 验证首个视频、图片+BGM、视频切换、最近播放、快速选播和设置实时生效
-- [ ] 14.3 执行大文件启动速度对比、网络中断恢复、BGM循环一轮以上和长时间播放测试
+- [x] 14.2 在 Sony/Amlogic Android 9 v7a TV 验证首个视频、图片+BGM、视频切换、最近播放、快速选播和设置实时生效
+- [x] 14.3 执行大文件启动速度对比、网络中断恢复、BGM循环一轮以上和长时间播放测试
 - [x] 14.4 核对 Activity/ViewModel 职责验收条件，而非仅按文件行数判断完成
 - [x] 14.5 记录最终 commit、release APK 路径、SHA-256、自动化结果和真机测试结果
 - [x] 14.6 清理临时 feature flag、旧实现、无用测试辅助和过期注释
-- [ ] 14.7 使用 OpenSpec validate 验证 change，完成评审后再归档并合并 capability specs
+- [x] 14.7 使用 OpenSpec validate 验证 change，完成评审后再归档并合并 capability specs
