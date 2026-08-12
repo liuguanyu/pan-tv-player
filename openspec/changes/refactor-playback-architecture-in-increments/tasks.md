@@ -83,12 +83,12 @@
 
 ## 10. 提取快速选播控制器
 
-- [ ] 10.1 为数据变化重绑、当前项局部更新、确认先关闭后切换和非法 position 编写 Controller 测试
-- [ ] 10.2 为 ViewHolder 未布局、有限焦点重试、列表隐藏和缩略图晚到编写 Robolectric 测试
-- [ ] 10.3 明确并测试“用户主动浏览时自动切换只更新蓝条、不抢焦点；重新打开聚焦当前项”的策略
-- [ ] 10.4 实现 QuickSelectorController并迁移 configure、sync、show、hide、focus 和确认逻辑
-- [ ] 10.5 将缩略图获取移入可测试数据边界，Activity 不再直接调用 FileRepository
-- [ ] 10.6 删除 Activity 中 quickSelectorCurrentKey、quickSelectorDataKey 和旧控制路径
+- [x] 10.1 为数据变化重绑、当前项局部更新、确认先关闭后切换和非法 position 编写 Controller 测试
+- [x] 10.2 为 ViewHolder 未布局、有限焦点重试、列表隐藏和缩略图晚到编写 Robolectric 测试
+- [x] 10.3 明确并测试“用户主动浏览时自动切换只更新蓝条、不抢焦点；重新打开聚焦当前项”的策略
+- [x] 10.4 实现 QuickSelectorController并迁移 configure、sync、show、hide、focus 和确认逻辑
+- [x] 10.5 将缩略图获取移入可测试数据边界，Activity 不再直接调用 FileRepository
+- [x] 10.6 删除 Activity 中 quickSelectorCurrentKey、quickSelectorDataKey 和旧控制路径
 - [ ] 10.7 运行自动化门禁并在目标 TV 验证翻页、异步缩略图、自动切换和遥控器确认
 
 ## 11. 提取 PlaybackHistoryRecorder

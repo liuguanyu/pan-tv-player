@@ -32,11 +32,8 @@ import com.baidu.tv.player.kt.player.Media3VideoPlayerEngine
 import com.baidu.tv.player.kt.player.PlaybackResult
 import com.baidu.tv.player.kt.player.UnsupportedReason
 import com.baidu.tv.player.kt.player.VideoPlayerEngine
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.baidu.tv.player.kt.auth.BaiduAuthService
-import com.baidu.tv.player.kt.repository.FileRepository
 import com.baidu.tv.player.kt.repository.SettingsRepository
+import com.baidu.tv.player.kt.repository.ThumbnailProvider
 import com.baidu.tv.player.kt.ui.playback.image.ImageBackgroundFactory
 import com.baidu.tv.player.kt.ui.playback.image.ImageEffectFactory
 import com.baidu.tv.player.kt.ui.settings.SettingsActivity
@@ -76,13 +73,12 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     private val viewModel: PlaybackViewModel by viewModels()
 
     @Inject lateinit var videoPlayerEngine: VideoPlayerEngine
-    @Inject lateinit var authService: BaiduAuthService
-    @Inject lateinit var fileRepository: FileRepository
     @Inject lateinit var settingsRepository: SettingsRepository
+    @Inject lateinit var thumbnailProvider: ThumbnailProvider
 
     private var controlsVisible = false
-    private var quickSelectorVisible = false
     private val selectAdapter = PlaylistQuickSelectorAdapter()
+    private lateinit var quickSelector: QuickSelectorController
     private var autoHideJob: Job? = null
     private var progressJob: Job? = null
     private var pendingVideo: Pair<String, FileInfo>? = null
@@ -93,8 +89,6 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     private var videoOutputSurface: Surface? = null
     private var currentImageBitmap: Bitmap? = null
     private var lastPresentationState: Pair<Int, String>? = null
-    private var quickSelectorCurrentKey: String? = null
-    private var quickSelectorDataKey: String? = null
     @Inject lateinit var bgmCoordinator: BackgroundMusicCoordinator
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -223,7 +217,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         if (infoVisible) renderInfoPanel(state)
         refreshPresentationIfNeeded(state)
         bgmCoordinator.onPlaybackStateChanged(state)
-        if (quickSelectorVisible) syncQuickSelectorToCurrent(state.currentFile)
+        if (quickSelector.visible) syncQuickSelectorToCurrent(state.currentFile)
         // 初始化失败（如播放列表为空）时事件可能在订阅前已丢失，这里按状态兜底提示并退出。
         if (!state.hasPlaylist && !state.isLoading && state.errorMessage != null && !fatalErrorShown) {
             fatalErrorShown = true
@@ -540,11 +534,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
             }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                 when {
-                    quickSelectorVisible -> {
-                        val focusedChild = binding.quickSelectorList.focusedChild
-                        val position = focusedChild?.let(binding.quickSelectorList::getChildAdapterPosition)
-                            ?: RecyclerView.NO_POSITION
-                        selectAdapter.selectAt(position)
+                    quickSelector.visible -> {
+                        quickSelector.confirmSelection()
                         true
                     }
                     !controlsVisible -> { showControls(); true }
@@ -553,35 +544,35 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
             }
             KeyEvent.KEYCODE_DPAD_UP -> {
                 when {
-                    quickSelectorVisible -> super.dispatchKeyEvent(event)
+                    quickSelector.visible -> super.dispatchKeyEvent(event)
                     !controlsVisible -> { showQuickSelector(); true }
                     else -> super.dispatchKeyEvent(event)
                 }
             }
             KeyEvent.KEYCODE_DPAD_DOWN -> {
                 when {
-                    quickSelectorVisible -> { hideQuickSelector(); true }
+                    quickSelector.visible -> { hideQuickSelector(); true }
                     !controlsVisible -> { showControls(); true }
                     else -> super.dispatchKeyEvent(event)
                 }
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
                 when {
-                    quickSelectorVisible -> super.dispatchKeyEvent(event)
+                    quickSelector.visible -> super.dispatchKeyEvent(event)
                     controlsVisible -> super.dispatchKeyEvent(event)
                     else -> { seekOrPrevious(); true }
                 }
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 when {
-                    quickSelectorVisible -> super.dispatchKeyEvent(event)
+                    quickSelector.visible -> super.dispatchKeyEvent(event)
                     controlsVisible -> super.dispatchKeyEvent(event)
                     else -> { seekOrNext(); true }
                 }
             }
             KeyEvent.KEYCODE_BACK -> {
                 when {
-                    quickSelectorVisible -> { hideQuickSelector(); true }
+                    quickSelector.visible -> { hideQuickSelector(); true }
                     infoVisible -> { hideInfoPanel(); true }
                     controlsVisible -> { hideControls(); true }
                     else -> super.dispatchKeyEvent(event)
@@ -711,37 +702,25 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     }
 
     private fun setupQuickSelector() {
-        binding.quickSelectorList.apply {
-            layoutManager = LinearLayoutManager(this@PlaybackActivity, LinearLayoutManager.HORIZONTAL, false)
-            adapter = selectAdapter
-            isFocusable = false
-            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
-        }
+        QuickSelectorController.setupRecyclerView(binding.quickSelectorList)
+        binding.quickSelectorList.adapter = selectAdapter
+        quickSelector = QuickSelectorController(
+            adapter = selectAdapter,
+            recyclerView = binding.quickSelectorList,
+            thumbnailProvider = thumbnailProvider,
+            scope = lifecycleScope,
+            focusHost = binding.playbackRoot,
+        )
     }
 
     /** 上键呼出快速选播列表：倒序展示当前播放列表，浮在播放内容上方。 */
     private fun showQuickSelector() {
         val state = viewModel.uiState.value
-        val files = state.files
-        if (files.isEmpty()) return
-        quickSelectorVisible = true
-        configureQuickSelector(state)
-        binding.quickSelectorList.visibility = View.VISIBLE
-        focusQuickSelectorCurrent(state.currentFile)
-        // 异步获取缩略图（filemetas?thumb=1），完成后刷新列表
-        fetchSelectorThumbnails(files)
-    }
-
-    private fun configureQuickSelector(state: PlaybackUiState) {
-        val files = state.files
-        quickSelectorDataKey = files.joinToString("|") { fileKey(it) }
-        quickSelectorCurrentKey = null
-        selectAdapter.configure(files.reversed(), state.currentFile) { selectedFile ->
+        quickSelector.show(state.files, state.currentFile) { selectedFile ->
             val latestFiles = viewModel.uiState.value.files
             val selectedKey = fileKey(selectedFile)
             val originalIndex = latestFiles.indexOfFirst { fileKey(it) == selectedKey }
             if (originalIndex >= 0) {
-                hideQuickSelector()
                 viewModel.playFromIndex(originalIndex)
             }
         }
@@ -749,59 +728,14 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
 
     private fun syncQuickSelectorToCurrent(currentFile: FileInfo?) {
         val state = viewModel.uiState.value
-        val dataKey = state.files.joinToString("|") { fileKey(it) }
-        if (dataKey != quickSelectorDataKey) {
-            configureQuickSelector(state)
-            fetchSelectorThumbnails(state.files)
-        } else {
-            selectAdapter.setHighlightedFile(currentFile)
-        }
-        val currentKey = currentFile?.let(::fileKey)
-        if (currentKey != quickSelectorCurrentKey) {
-            focusQuickSelectorCurrent(currentFile)
-        }
-    }
-
-    private fun focusQuickSelectorCurrent(currentFile: FileInfo?) {
-        val position = selectAdapter.positionOf(currentFile)
-        if (position == RecyclerView.NO_POSITION) return
-        quickSelectorCurrentKey = currentFile?.let(::fileKey)
-        binding.quickSelectorList.post {
-            val lm = binding.quickSelectorList.layoutManager as? LinearLayoutManager
-            lm?.scrollToPositionWithOffset(position, binding.quickSelectorList.width / 3)
-            binding.quickSelectorList.post {
-                binding.quickSelectorList.findViewHolderForAdapterPosition(position)?.itemView?.requestFocus()
-            }
-        }
+        quickSelector.syncCurrent(state.files, currentFile)
     }
 
     private fun fileKey(file: FileInfo): String =
         if (file.fsId != 0L) "fs:${file.fsId}" else "path:${file.path.orEmpty()}"
 
-    /** 通过 filemetas API 批量获取缩略图并更新快速选播列表。 */
-    private fun fetchSelectorThumbnails(files: List<FileInfo>) {
-        val token = authService.getAccessToken() ?: return
-        val fsIds = files.map { it.fsId }.filter { it > 0 }
-        if (fsIds.isEmpty()) return
-        lifecycleScope.launch {
-            try {
-                val thumbnails = fileRepository.fetchThumbnails(token, fsIds)
-                if (thumbnails.isNotEmpty() && quickSelectorVisible) {
-                    selectAdapter.updateThumbnails(thumbnails)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "获取选播列表缩略图失败", e)
-            }
-        }
-    }
-
-    /** 下键/返回键收起快速选播列表。 */
     private fun hideQuickSelector() {
-        quickSelectorVisible = false
-        quickSelectorCurrentKey = null
-        quickSelectorDataKey = null
-        binding.quickSelectorList.visibility = View.GONE
-        binding.playbackRoot.requestFocus()
+        quickSelector.hide()
     }
 
     override fun onEnded() {
