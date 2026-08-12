@@ -26,12 +26,12 @@
 
 ## 4. 统一百度可播放 URL 解析
 
-- [ ] 4.1 为 token 为空、已有 query、已有 token、详情为空、dlink 为空、网络失败和协程取消编写 Resolver 单测
-- [ ] 4.2 定义可注入 PlayableUrlResolver 并实现现有 dlink/token 解析语义
-- [ ] 4.3 将 PlaybackViewModel 的 URL 解析迁移到 Resolver，保持 dlink 预加载和缓存行为
-- [ ] 4.4 将 BGM 的 URL 解析迁移到 Resolver并删除 Activity 中重复拼接逻辑
-- [ ] 4.5 验证 Resolver 和播放器未加入固定连接/读取超时、完整缓存或分片缓存
-- [ ] 4.6 运行自动化门禁并在目标 TV 比较首个视频和大文件启动基线
+- [x] 4.1 为 token 为空、已有 query、已有 token、详情为空、dlink 为空、网络失败和协程取消编写 Resolver 单测
+- [x] 4.2 定义可注入 PlayableUrlResolver 并实现现有 dlink/token 解析语义
+- [x] 4.3 将 PlaybackViewModel 的 URL 解析迁移到 Resolver，保持 dlink 预加载和缓存行为
+- [x] 4.4 将 BGM 的 URL 解析迁移到 Resolver并删除 Activity 中重复拼接逻辑
+- [x] 4.5 验证 Resolver 和播放器未加入固定连接/读取超时、完整缓存或分片缓存
+- [x] 4.6 运行自动化门禁并在目标 TV 比较首个视频和大文件启动基线
 
 ## 5. 抽象背景音频播放器
 

@@ -12,6 +12,7 @@ import com.baidu.tv.player.kt.model.PlayMode
 import com.baidu.tv.player.kt.model.PlaybackHistory
 import com.baidu.tv.player.kt.model.PlaylistItem
 import com.baidu.tv.player.kt.repository.FileRepository
+import com.baidu.tv.player.kt.repository.PlayableUrlResolver
 import com.baidu.tv.player.kt.repository.PlaybackHistoryRepository
 import com.baidu.tv.player.kt.repository.PlaylistRepository
 import com.baidu.tv.player.kt.repository.SettingsRepository
@@ -104,6 +105,7 @@ class PlaybackViewModel @Inject constructor(
     private val playlistRepository: PlaylistRepository,
     private val settingsRepository: SettingsRepository,
     private val locationExtractionService: LocationExtractionService,
+    private val urlResolver: PlayableUrlResolver,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlaybackUiState())
@@ -506,27 +508,20 @@ class PlaybackViewModel @Inject constructor(
 
     private suspend fun resolvePlayableUrl(file: FileInfo): String {
         dlinkCache[file.fsId]?.let { return it }
-        val token = authService.getAccessToken().orEmpty()
-        check(token.isNotEmpty()) { "未获取到访问令牌，请先登录" }
-        val detail = if (file.dlink.isNullOrBlank()) {
-            fileDetailCache[file.fsId] ?: fileRepository.fetchFileDetail(token, file.fsId)?.also {
-                fileDetailCache[file.fsId] = it
-            }
-        } else {
-            null
-        }
+        // 保留 fileDetailCache：文件无 dlink 时先查缓存或拉取详情，为封面缩略图留存 thumbs。
         val dlink = file.dlink?.takeIf { it.isNotBlank() }
-            ?: detail?.dlink?.takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("文件缺少 dlink: ${file.serverFilename.orEmpty()}")
-        return appendAccessToken(dlink, token)
+            ?: fileDetailCache[file.fsId]?.dlink?.takeIf { it.isNotBlank() }
+            ?: fetchAndCacheFileDetail(file.fsId)?.dlink?.takeIf { it.isNotBlank() }
+        val url = urlResolver.resolve(file.fsId, dlink, file.serverFilename)
+        dlinkCache[file.fsId] = url
+        return url
     }
 
-    private fun appendAccessToken(dlink: String, token: String): String =
-        if (dlink.contains("access_token=")) {
-            dlink
-        } else {
-            dlink + (if (dlink.contains('?')) "&" else "?") + "access_token=" + token
-        }
+    private suspend fun fetchAndCacheFileDetail(fsId: Long): FileInfo? {
+        val token = authService.getAccessToken().orEmpty()
+        check(token.isNotEmpty()) { "未获取到访问令牌，请先登录" }
+        return fileRepository.fetchFileDetail(token, fsId)?.also { fileDetailCache[fsId] = it }
+    }
 
     private fun calculateNextIndex(forward: Boolean): Int? = calculateNextIndexForState(_uiState.value, forward)
 

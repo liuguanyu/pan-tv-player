@@ -8,6 +8,7 @@ import com.baidu.tv.player.kt.model.PlayMode
 import com.baidu.tv.player.kt.model.PlaybackHistory
 import com.baidu.tv.player.kt.model.ImageEffect
 import com.baidu.tv.player.kt.repository.FileRepository
+import com.baidu.tv.player.kt.repository.PlayableUrlResolver
 import com.baidu.tv.player.kt.repository.PlaybackHistoryRepository
 import com.baidu.tv.player.kt.repository.PlaylistRepository
 import com.baidu.tv.player.kt.repository.SettingsRepository
@@ -447,6 +448,7 @@ class PlaybackViewModelTest {
         historyRepository = historyRepository,
         playlistRepository = playlistRepository,
         locationExtractionService = locationExtractionService,
+        urlResolver = PlayableUrlResolver(authService, fileRepository),
     )
 
     private fun history(

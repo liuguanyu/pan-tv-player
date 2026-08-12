@@ -38,6 +38,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.baidu.tv.player.kt.auth.BaiduAuthService
 import com.baidu.tv.player.kt.repository.FileRepository
+import com.baidu.tv.player.kt.repository.PlayableUrlResolver
 import com.baidu.tv.player.kt.repository.BgmSelection
 import com.baidu.tv.player.kt.repository.SettingsRepository
 import com.baidu.tv.player.kt.ui.playback.image.ImageBackgroundFactory
@@ -83,6 +84,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     @Inject lateinit var authService: BaiduAuthService
     @Inject lateinit var fileRepository: FileRepository
     @Inject lateinit var settingsRepository: SettingsRepository
+    @Inject lateinit var urlResolver: PlayableUrlResolver
 
     private var controlsVisible = false
     private var quickSelectorVisible = false
@@ -438,12 +440,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
             backgroundMusicPlayer.stop()
             bgmResolveJob = lifecycleScope.launch {
                 try {
-                    val token = authService.getAccessToken().orEmpty()
-                    val detail = fileRepository.fetchFileDetail(token, selection.fsId)
-                    val dlink = detail?.dlink?.takeIf { it.isNotBlank() }
-                        ?: error("背景音乐缺少下载链接")
-                    val url = if (dlink.contains("access_token=")) dlink
-                        else dlink + (if (dlink.contains('?')) "&" else "?") + "access_token=" + token
+                    val url = urlResolver.resolve(selection.fsId, dlink = null, serverFilename = null)
                     bgmUrl = url
                     bgmSelectionKey = selection.fsId
                     val action = computeBgmAction(state, hasBgmSelection = true, isBgmResolved = true, isForeground = !bgmPausedByLifecycle)
