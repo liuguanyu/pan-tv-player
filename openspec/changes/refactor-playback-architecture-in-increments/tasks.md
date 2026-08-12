@@ -73,12 +73,12 @@
 
 ## 9. 提取媒体准备与并发控制
 
-- [ ] 9.1 为 A慢B快、A晚到失败、切换取消和 retry 当前项编写 generation 并发测试
-- [ ] 9.2 为预加载去重、预加载复用和预加载失败不影响当前媒体编写测试
-- [ ] 9.3 实现 MediaPreparationCoordinator并为每次切换分配单调 generation
-- [ ] 9.4 将 URL解析、当前准备和下一项预加载迁移到 Coordinator
-- [ ] 9.5 确保只有当前 generation 可更新状态、发出播放事件或显示错误
-- [ ] 9.6 删除 ViewModel 中旧 prepare/preload job 与 Mutex 编排路径
+- [x] 9.1 为 A慢B快、A晚到失败、切换取消和 retry 当前项编写 generation 并发测试
+- [x] 9.2 为预加载去重、预加载复用和预加载失败不影响当前媒体编写测试
+- [x] 9.3 实现 MediaPreparationCoordinator并为每次切换分配单调 generation
+- [x] 9.4 将 URL解析、当前准备和下一项预加载迁移到 Coordinator
+- [x] 9.5 确保只有当前 generation 可更新状态、发出播放事件或显示错误
+- [x] 9.6 删除 ViewModel 中旧 prepare/preload job 与 Mutex 编排路径
 - [ ] 9.7 运行自动化门禁并在目标 TV 快速连续切换图片/视频，比较首播与大文件性能基线
 
 ## 10. 提取快速选播控制器

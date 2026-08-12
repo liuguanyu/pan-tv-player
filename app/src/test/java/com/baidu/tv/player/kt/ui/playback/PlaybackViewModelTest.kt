@@ -405,9 +405,9 @@ class PlaybackViewModelTest {
     }
 
     @Test
-    fun rapidSwitching_lateResolveEmitsStaleEvent_currentBehavior() = runTest {
-        // 表征测试：A 解析较慢、用户切到 B 时，A 的迟到的解析结果仍会发出 PlayVideo(A)。
-        // Phase 9 将用 generation 机制抑制旧请求的结果。
+    fun rapidSwitching_lateResolveSuppressed_onlyBEmitted() = runTest {
+        // Phase 9 修复测试：A 解析较慢、用户切到 B 时，A 的迟到的解析结果被 generation 机制抑制。
+        // 只有 B 的 PlayVideo 事件发出，A 的陈旧结果被丢弃。
         val files = listOf(
             video("a.mp4", fsId = 1, dlink = null),
             video("b.mp4", fsId = 2, dlink = "https://d/b"),
@@ -430,23 +430,108 @@ class PlaybackViewModelTest {
             assertTrue("expected PlayVideo for B", eventB is PlaybackUiEvent.PlayVideo)
             assertEquals(2L, (eventB as PlaybackUiEvent.PlayVideo).file.fsId)
 
-            // advanceUntilIdle 后 A 的 delay 完成，A 的旧 prepare 发出 PlayVideo(A) —— 陈旧结果
+            // advanceUntilIdle 后 A 的 delay 完成，但 A 的旧 generation 已被取消，
+            // 其结果被丢弃 —— 不应发出任何额外事件。
             advanceUntilIdle()
-            val staleEventA = awaitItem()
-            assertTrue("expected stale PlayVideo for A", staleEventA is PlaybackUiEvent.PlayVideo)
-            assertEquals(1L, (staleEventA as PlaybackUiEvent.PlayVideo).file.fsId)
+            expectNoEvents()
 
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        // 最终状态应为 B
+        assertEquals(2L, vm.uiState.value.currentFile?.fsId)
+        assertEquals("https://d/b?access_token=token", vm.uiState.value.preparedUrl)
+    }
+
+    @Test
+    fun rapidSwitching_aLateFailure_doesNotShowError_afterBSucceeds() = runTest {
+        // 9.1: A 晚到失败不应中断 B 的成功播放
+        val files = listOf(
+            video("a.mp4", fsId = 1, dlink = null),
+            video("b.mp4", fsId = 2, dlink = "https://d/b"),
+        )
+        playlistCache.put("p", files)
+        coEvery { fileRepository.fetchFileDetail("token", 1) } coAnswers {
+            delay(1_000)
+            throw RuntimeException("A 解析失败")
+        }
+
+        val vm = viewModel()
+
+        vm.events.test {
+            vm.initialize("p", MediaType.VIDEO.code, "/movies", 0)
+            vm.playFromIndex(1)
+            val eventB = awaitItem()
+            assertTrue(eventB is PlaybackUiEvent.PlayVideo)
+            assertEquals(2L, (eventB as PlaybackUiEvent.PlayVideo).file.fsId)
+
+            advanceUntilIdle()
+            // A 的晚到失败不应产生 ShowError 事件
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        assertFalse("errorMessage should be null", vm.uiState.value.errorMessage != null)
+        assertEquals(2L, vm.uiState.value.currentFile?.fsId)
+    }
+
+    @Test
+    fun retryCurrent_emitsOnlyOnePlayVideo() = runTest {
+        // 9.1: retry 当前项只发出一个 PlayVideo
+        val files = listOf(video("a.mp4", fsId = 1, dlink = "https://d/a"))
+        playlistCache.put("p", files)
+        val vm = viewModel()
+
+        vm.events.test {
+            vm.initialize("p", MediaType.VIDEO.code, "/movies", 0)
+            val event1 = awaitItem()
+            assertTrue(event1 is PlaybackUiEvent.PlayVideo)
+            advanceUntilIdle()
+
+            vm.retryCurrent()
+            val event2 = awaitItem()
+            assertTrue(event2 is PlaybackUiEvent.PlayVideo)
+            advanceUntilIdle()
+            expectNoEvents()
             cancelAndIgnoreRemainingEvents()
         }
     }
 
+    @Test
+    fun preloadNextFile_failure_doesNotAffectCurrentMedia() = runTest {
+        // 9.2: 预加载失败不影响当前媒体
+        val files = listOf(
+            video("a.mp4", fsId = 1, dlink = "https://d/a"),
+            video("b.mp4", fsId = 2, dlink = null),
+        )
+        playlistCache.put("p", files)
+        coEvery { fileRepository.fetchFileDetail("token", 2) } throws RuntimeException("预加载失败")
+        val vm = viewModel()
+
+        vm.events.test {
+            vm.initialize("p", MediaType.VIDEO.code, "/movies", 0)
+            val event = awaitItem()
+            assertTrue(event is PlaybackUiEvent.PlayVideo)
+            assertEquals(1L, (event as PlaybackUiEvent.PlayVideo).file.fsId)
+            advanceUntilIdle()
+
+            // 预加载 B 失败——不应发出错误
+            vm.preloadNextFile()
+            vm.awaitPreloadForTest()
+            advanceUntilIdle()
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        // 当前媒体仍为 A
+        assertEquals(1L, vm.uiState.value.currentFile?.fsId)
+        assertEquals("https://d/a?access_token=token", vm.uiState.value.preparedUrl)
+    }
+
     private fun viewModel() = PlaybackViewModel(
         settingsRepository = settingsRepository,
-        authService = authService,
-        fileRepository = fileRepository,
         historyRepository = historyRepository,
         locationExtractionService = locationExtractionService,
-        urlResolver = PlayableUrlResolver(authService, fileRepository),
         sessionFactory = PlaybackSessionFactory(
             playlistCache = playlistCache,
             playlistRepository = playlistRepository,
@@ -455,6 +540,12 @@ class PlaybackViewModelTest {
             queueNavigator = PlaybackQueueNavigator(),
         ),
         queueNavigator = PlaybackQueueNavigator(),
+        preparationCoordinator = MediaPreparationCoordinator(
+            urlResolver = PlayableUrlResolver(authService, fileRepository),
+            historyRepository = historyRepository,
+            authService = authService,
+            fileRepository = fileRepository,
+        ),
     )
 
     private fun history(

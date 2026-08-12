@@ -1,21 +1,15 @@
 package com.baidu.tv.player.kt.ui.playback
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.baidu.tv.player.kt.auth.BaiduAuthService
 import com.baidu.tv.player.kt.location.LocationExtractionService
 import com.baidu.tv.player.kt.model.FileInfo
 import com.baidu.tv.player.kt.model.ImageEffect
 import com.baidu.tv.player.kt.model.MediaType
 import com.baidu.tv.player.kt.model.PlayMode
-import com.baidu.tv.player.kt.model.PlaybackHistory
-import com.baidu.tv.player.kt.repository.FileRepository
-import com.baidu.tv.player.kt.repository.PlayableUrlResolver
 import com.baidu.tv.player.kt.repository.PlaybackHistoryRepository
 import com.baidu.tv.player.kt.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -26,8 +20,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 private const val DEFAULT_IMAGE_DISPLAY_MS = 8_000L
@@ -93,15 +85,13 @@ sealed interface PlaybackUiEvent {
  */
 @HiltViewModel
 class PlaybackViewModel @Inject constructor(
-    private val authService: BaiduAuthService,
-    private val fileRepository: FileRepository,
     private val historyRepository: PlaybackHistoryRepository,
     private val settingsRepository: SettingsRepository,
     private val locationExtractionService: LocationExtractionService,
-    private val urlResolver: PlayableUrlResolver,
     private val sessionFactory: PlaybackSessionFactory,
     private val queueNavigator: PlaybackQueueNavigator,
-) : ViewModel() {
+    private val preparationCoordinator: MediaPreparationCoordinator,
+) : ViewModel(), PrepareCallback {
 
     private val _uiState = MutableStateFlow(PlaybackUiState())
     val uiState: StateFlow<PlaybackUiState> = _uiState.asStateFlow()
@@ -109,11 +99,6 @@ class PlaybackViewModel @Inject constructor(
     private val _events = MutableSharedFlow<PlaybackUiEvent>(extraBufferCapacity = 8)
     val events: SharedFlow<PlaybackUiEvent> = _events.asSharedFlow()
 
-    private val dlinkCache = LinkedHashMap<Long, String>()
-    /** 获取播放链接时返回的完整文件详情，复用于最近播放封面，避免丢失 thumbs。 */
-    private val fileDetailCache = LinkedHashMap<Long, FileInfo>()
-    private val preloadMutex = Mutex()
-    private var preloadJob: Job? = null
     private var locationJob: Job? = null
     private var imageAutoNextJob: Job? = null
 
@@ -244,9 +229,7 @@ class PlaybackViewModel @Inject constructor(
                 errorMessage = null,
             )
         }
-        viewModelScope.launch {
-            prepareAndEmitCurrent()
-        }
+        prepareAndEmitCurrent()
     }
 
     fun togglePlayPause() {
@@ -301,25 +284,21 @@ class PlaybackViewModel @Inject constructor(
     }
 
     fun retryCurrent() {
-        viewModelScope.launch { prepareAndEmitCurrent() }
+        val file = _uiState.value.currentFile ?: return
+        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        val gen = preparationCoordinator.nextGeneration()
+        preparationCoordinator.prepare(file, gen, viewModelScope, _uiState, this)
     }
 
     fun preloadNextFile() {
-        preloadJob?.cancel()
-        preloadJob = viewModelScope.launch {
-            preloadMutex.withLock {
-                val state = _uiState.value
-                val nextIndex = queueNavigator.nextIndex(state.files.size, state.currentIndex, state.playMode, forward = true) ?: return@withLock
-                val file = state.files.getOrNull(nextIndex) ?: return@withLock
-                if (dlinkCache.containsKey(file.fsId)) return@withLock
-                runCatching { resolvePlayableUrl(file) }
-                    .onSuccess { dlinkCache[file.fsId] = it }
-            }
-        }
+        val state = _uiState.value
+        val nextIndex = queueNavigator.nextIndex(state.files.size, state.currentIndex, state.playMode, forward = true) ?: return
+        val file = state.files.getOrNull(nextIndex) ?: return
+        preparationCoordinator.preloadNextFile(viewModelScope, file)
     }
 
     internal suspend fun awaitPreloadForTest() {
-        preloadJob?.join()
+        preparationCoordinator.awaitPreloadForTest()
     }
 
     private fun switchToIndex(index: Int) {
@@ -338,35 +317,38 @@ class PlaybackViewModel @Inject constructor(
                 contentReady = false,
             )
         }
-        viewModelScope.launch { prepareAndEmitCurrent() }
+        prepareAndEmitCurrent()
     }
 
-    private suspend fun prepareAndEmitCurrent() {
+    private fun prepareAndEmitCurrent() {
         val file = _uiState.value.currentFile ?: return
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-        runCatching { resolvePlayableUrl(file) }
-            .onSuccess { url ->
-                dlinkCache[file.fsId] = url
-                _uiState.update { it.copy(preparedUrl = url, isLoading = false, isPlaying = true) }
-                // 文件真正开始播放：记录该文件到"最近播放"（文件级，去重 + FIFO 由仓库处理）。
-                insertCurrentFileHistory(file)
-                if (file.isVideo()) {
-                    _events.emit(PlaybackUiEvent.PlayVideo(url, file))
-                    extractLocationFor(url, isVideo = true)
-                } else if (file.isImage()) {
-                    _events.emit(PlaybackUiEvent.ShowImage(url, file))
-                    extractLocationFor(url, isVideo = false)
-                    // 图片自动切换计时改由 notifyContentReady()（图片真正渲染后）启动，此处不再预启。
-                } else {
-                    _events.emit(PlaybackUiEvent.ShowError("不支持的文件类型: ${file.serverFilename.orEmpty()}"))
-                }
-                preloadNextFile()
-            }
-            .onFailure { throwable ->
-                val msg = throwable.message ?: "获取播放链接失败"
-                _uiState.update { it.copy(isLoading = false, errorMessage = msg, isPlaying = false) }
-                _events.emit(PlaybackUiEvent.ShowError(msg))
-            }
+        val gen = preparationCoordinator.nextGeneration()
+        preparationCoordinator.prepare(file, gen, viewModelScope, _uiState, this)
+    }
+
+    // ------------------------------------------------------------------
+    // PrepareCallback 实现：由 MediaPreparationCoordinator 回调
+    // ------------------------------------------------------------------
+
+    override suspend fun onPrepareSuccess(file: FileInfo, url: String) {
+        _uiState.update { it.copy(preparedUrl = url, isLoading = false, isPlaying = true) }
+        if (file.isVideo()) {
+            _events.emit(PlaybackUiEvent.PlayVideo(url, file))
+            extractLocationFor(url, isVideo = true)
+        } else if (file.isImage()) {
+            _events.emit(PlaybackUiEvent.ShowImage(url, file))
+            extractLocationFor(url, isVideo = false)
+            // 图片自动切换计时改由 notifyContentReady()（图片真正渲染后）启动，此处不再预启。
+        } else {
+            _events.emit(PlaybackUiEvent.ShowError("不支持的文件类型: ${file.serverFilename.orEmpty()}"))
+        }
+        preloadNextFile()
+    }
+
+    override suspend fun onPrepareFailure(file: FileInfo, message: String) {
+        _uiState.update { it.copy(isLoading = false, errorMessage = message, isPlaying = false) }
+        _events.emit(PlaybackUiEvent.ShowError(message))
     }
 
     /**
@@ -433,73 +415,9 @@ class PlaybackViewModel @Inject constructor(
         }
     }
 
-    private suspend fun resolvePlayableUrl(file: FileInfo): String {
-        dlinkCache[file.fsId]?.let { return it }
-        // 保留 fileDetailCache：文件无 dlink 时先查缓存或拉取详情，为封面缩略图留存 thumbs。
-        val dlink = file.dlink?.takeIf { it.isNotBlank() }
-            ?: fileDetailCache[file.fsId]?.dlink?.takeIf { it.isNotBlank() }
-            ?: fetchAndCacheFileDetail(file.fsId)?.dlink?.takeIf { it.isNotBlank() }
-        val url = urlResolver.resolve(file.fsId, dlink, file.serverFilename)
-        dlinkCache[file.fsId] = url
-        return url
-    }
-
-    private suspend fun fetchAndCacheFileDetail(fsId: Long): FileInfo? {
-        val token = authService.getAccessToken().orEmpty()
-        check(token.isNotEmpty()) { "未获取到访问令牌，请先登录" }
-        return fileRepository.fetchFileDetail(token, fsId)?.also { fileDetailCache[fsId] = it }
-    }
-
-    /**
-     * 记录**当前正在播放的单个文件**到最近播放（文件级）。
-     *
-     * 在文件真正开始播放（[prepareAndEmitCurrent] 成功）后调用，携带来源上下文，
-     * 使点击历史时能重建列表并从该文件开始。去重与 FIFO 裁剪在仓库层处理。
-     */
-    private suspend fun insertCurrentFileHistory(file: FileInfo) {
-        val state = _uiState.value
-        val filePath = file.path?.takeIf { it.isNotBlank() }
-            ?: file.serverFilename?.let { name ->
-                val folder = state.folderPath.trimEnd('/')
-                if (folder.isNotEmpty()) "$folder/$name" else "/$name"
-            }
-            ?: return
-        val fileName = file.serverFilename ?: filePath.substringAfterLast('/')
-        val mediaType = if (file.isVideo()) MediaType.VIDEO.code else MediaType.IMAGE.code
-        // 数据库播放列表项不保存 thumbs，但获取 dlink 的 filemetas 接口会返回完整文件详情。
-        // 优先使用原始列表缩略图，再使用详情缩略图，并按清晰度 URL 逐级兜底。
-        // 注意：视频文件的 thumbs.urlX 可能是文件下载链接（含 /file/），需跳过。
-        val thumbs = file.thumbs ?: fileDetailCache[file.fsId]?.thumbs
-        val cover = sequenceOf(thumbs?.icon, thumbs?.url1, thumbs?.url2, thumbs?.url3)
-            .firstOrNull { url -> !url.isNullOrBlank() && !url.contains("/file/") }
-
-        try {
-            historyRepository.insert(
-                PlaybackHistory(
-                    folderPath = filePath,
-                    folderName = fileName,
-                    mediaType = mediaType,
-                    fileCount = 1,
-                    createTime = System.currentTimeMillis(),
-                    coverImagePath = cover,
-                    sourcePlaylistId = state.sourcePlaylistId,
-                    sourceFolderPath = state.sourceFolderPath,
-                    fsId = file.fsId,
-                ),
-            )
-        } catch (throwable: Throwable) {
-            if (throwable is CancellationException) throw throwable
-            // 最近播放属于附属数据：写库失败时保留内存中的即时排序，不中断已成功的媒体播放。
-            Log.e(TAG, "更新最近播放失败: $filePath", throwable)
-        }
-    }
-
     private fun emitError(message: String) {
         _uiState.update { it.copy(errorMessage = message, isLoading = false) }
         _events.tryEmit(PlaybackUiEvent.ShowError(message))
     }
 
-    private companion object {
-        const val TAG = "PlaybackViewModel"
-    }
 }
