@@ -10,13 +10,10 @@ import com.baidu.tv.player.kt.model.ImageEffect
 import com.baidu.tv.player.kt.model.MediaType
 import com.baidu.tv.player.kt.model.PlayMode
 import com.baidu.tv.player.kt.model.PlaybackHistory
-import com.baidu.tv.player.kt.model.PlaylistItem
 import com.baidu.tv.player.kt.repository.FileRepository
 import com.baidu.tv.player.kt.repository.PlayableUrlResolver
 import com.baidu.tv.player.kt.repository.PlaybackHistoryRepository
-import com.baidu.tv.player.kt.repository.PlaylistRepository
 import com.baidu.tv.player.kt.repository.SettingsRepository
-import com.baidu.tv.player.kt.util.PlaylistCache
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -27,7 +24,6 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -98,14 +94,13 @@ sealed interface PlaybackUiEvent {
  */
 @HiltViewModel
 class PlaybackViewModel @Inject constructor(
-    private val playlistCache: PlaylistCache,
     private val authService: BaiduAuthService,
     private val fileRepository: FileRepository,
     private val historyRepository: PlaybackHistoryRepository,
-    private val playlistRepository: PlaylistRepository,
     private val settingsRepository: SettingsRepository,
     private val locationExtractionService: LocationExtractionService,
     private val urlResolver: PlayableUrlResolver,
+    private val sessionFactory: PlaybackSessionFactory,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlaybackUiState())
@@ -184,33 +179,13 @@ class PlaybackViewModel @Inject constructor(
         selectedPath: String? = null,
     ) {
         if (_uiState.value.files.isNotEmpty()) return
-        val files = playlistCache.getAndRemove(playlistId).orEmpty()
-        if (files.isEmpty()) {
-            emitError("播放列表为空")
+        val session = try {
+            sessionFactory.fromDirectoryCache(playlistId, mediaType, folderPath, startIndex, selectedPath)
+        } catch (e: PlaybackSessionException) {
+            emitError(e.message ?: "播放列表为空")
             return
         }
-        val selectedIndex = selectedPath
-            ?.let { path -> files.indexOfFirst { it.path == path }.takeIf { it >= 0 } }
-        val safeIndex = selectedIndex ?: resolveStartIndex(files.size, startIndex)
-        val folderName = folderPath.trimEnd('/').substringAfterLast('/').ifEmpty { folderPath }
-        _uiState.update {
-            it.copy(
-                playlistId = playlistId,
-                files = files,
-                currentIndex = safeIndex,
-                currentFile = files[safeIndex],
-                mediaType = mediaType,
-                folderPath = folderPath,
-                folderName = folderName,
-                sourceFolderPath = folderPath,
-                sourcePlaylistId = null,
-                isLoading = true,
-                errorMessage = null,
-            )
-        }
-        viewModelScope.launch {
-            prepareAndEmitCurrent()
-        }
+        applySession(session)
     }
 
     /**
@@ -222,37 +197,13 @@ class PlaybackViewModel @Inject constructor(
         if (_uiState.value.files.isNotEmpty()) return
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            val playlist = playlistRepository.getPlaylistByIdSync(playlistDbId)
-            if (playlist == null) {
-                emitError("播放列表不存在")
+            val session = try {
+                sessionFactory.fromDatabasePlaylist(playlistDbId, startFsId)
+            } catch (e: PlaybackSessionException) {
+                emitError(e.message ?: "播放列表不存在")
                 return@launch
             }
-            val files = playlistRepository.getPlaylistItemsSync(playlistDbId).map { it.toFileInfo() }
-            if (files.isEmpty()) {
-                emitError("播放列表为空")
-                return@launch
-            }
-            val mediaTypeCode = playlist.mediaType.toPlaybackMediaTypeCode()
-            // 起始项：优先定位到指定 fs_id（来自最近播放），否则用列表上次播放位置。
-            val safeIndex = startFsId
-                ?.let { fid -> files.indexOfFirst { it.fsId == fid }.takeIf { it >= 0 } }
-                ?: resolveStartIndex(files.size, playlist.lastPlayedIndex)
-            _uiState.update {
-                it.copy(
-                    playlistId = playlistDbId.toString(),
-                    files = files,
-                    currentIndex = safeIndex,
-                    currentFile = files[safeIndex],
-                    mediaType = mediaTypeCode,
-                    folderPath = playlist.name,
-                    folderName = playlist.name,
-                    sourcePlaylistId = playlistDbId,
-                    sourceFolderPath = null,
-                    isLoading = true,
-                    errorMessage = null,
-                )
-            }
-            prepareAndEmitCurrent()
+            applySession(session)
         }
     }
 
@@ -261,68 +212,43 @@ class PlaybackViewModel @Inject constructor(
         if (_uiState.value.files.isNotEmpty()) return
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            val allHistory = historyRepository.getRecentHistory(PlaybackHistoryRepository.MAX_HISTORY).first()
-                .filter { it.fsId > 0L }
-            if (allHistory.isEmpty()) {
-                emitError("播放历史为空")
+            val session = try {
+                sessionFactory.fromRecentHistory(historyId)
+            } catch (e: PlaybackSessionException) {
+                emitError(e.message ?: "播放历史为空")
                 return@launch
             }
-            val files = allHistory.map { it.toPlaybackFileInfo() }
-            val clickedHistory = historyRepository.getHistoryById(historyId).first()
-            val safeIndex = if (clickedHistory != null && clickedHistory.fsId > 0L) {
-                files.indexOfFirst { it.fsId == clickedHistory.fsId }.takeIf { it >= 0 }
-            } else {
-                null
-            }
-            if (safeIndex == null) {
-                emitError("该记录不在最近播放中")
-                return@launch
-            }
-            _uiState.update {
-                it.copy(
-                    playlistId = "history-$historyId",
-                    files = files,
-                    currentIndex = safeIndex,
-                    currentFile = files[safeIndex],
-                    mediaType = MediaType.ALL.code,
-                    folderPath = "最近播放",
-                    folderName = "最近播放",
-                    sourcePlaylistId = null,
-                    sourceFolderPath = null,
-                    isLoading = true,
-                    errorMessage = null,
-                )
-            }
-            prepareAndEmitCurrent()
+            applySession(session)
         }
     }
 
-    private fun PlaybackHistory.toPlaybackFileInfo(): FileInfo = FileInfo(
-        fsId = fsId,
-        path = folderPath,
-        serverFilename = folderName,
-        size = 0,
-        category = when (mediaType) {
-            MediaType.VIDEO.code -> 1
-            else -> 3
-        },
-    )
-
-    /** Playlist.mediaType(0=混合,1=视频,2=图片) → MediaType code(1=图片,2=视频,3=混合)。 */
-    private fun Int.toPlaybackMediaTypeCode(): Int = when (this) {
-        1 -> MediaType.VIDEO.code
-        2 -> MediaType.IMAGE.code
-        else -> MediaType.ALL.code
+    /**
+     * 将 [PlaybackSession] 应用到 UiState 并触发当前媒体准备（Phase 7）。
+     *
+     * 三条 initialize 入口统一调用此方法，消除重复的 UiState 组装代码。
+     */
+    private fun applySession(session: PlaybackSession) {
+        val files = session.items
+        val safeIndex = session.startIndex
+        _uiState.update {
+            it.copy(
+                playlistId = session.playlistId,
+                files = files,
+                currentIndex = safeIndex,
+                currentFile = files[safeIndex],
+                mediaType = session.mediaType,
+                folderPath = session.folderPath,
+                folderName = session.title,
+                sourcePlaylistId = session.sourcePlaylistId,
+                sourceFolderPath = session.sourceFolderPath,
+                isLoading = true,
+                errorMessage = null,
+            )
+        }
+        viewModelScope.launch {
+            prepareAndEmitCurrent()
+        }
     }
-
-    /** PlaylistItem.mediaType: 1=视频, 2=图片 → FileInfo.category: 1=视频, 3=图片。 */
-    private fun PlaylistItem.toFileInfo(): FileInfo = FileInfo(
-        fsId = fsId,
-        path = filePath,
-        serverFilename = fileName,
-        size = fileSize,
-        category = if (mediaType == 1) 1 else 3,
-    )
 
     fun togglePlayPause() {
         _uiState.update { it.copy(isPlaying = !it.isPlaying) }
@@ -545,23 +471,7 @@ class PlaybackViewModel @Inject constructor(
         return randomQueue.removeFirstOrNull() ?: ((currentIndex + 1) % size)
     }
 
-    /**
-     * 计算进入播放列表时的起始项。
-     *
-     * - 随机模式（[PlayMode.RANDOM]）：忽略顺序起点，改用随机项开始。
-     * - 倒序模式（[PlayMode.REVERSE]）：普通入口默认从列表最后一项开始，再向前播放。
-     * - 其他模式：沿用 [preferredIndex]（如 intent 传入的 startIndex）。
-     *
-     * 直接读取 [SettingsRepository.playMode] 的 StateFlow 当前值，避免依赖尚未 collect 完成的 uiState.playMode。
-     */
-    private fun resolveStartIndex(size: Int, preferredIndex: Int): Int {
-        if (size <= 1) return preferredIndex.coerceIn(0, maxOf(0, size - 1))
-        return when (settingsRepository.playMode.value) {
-            PlayMode.RANDOM -> Random(System.nanoTime()).nextInt(size)
-            PlayMode.REVERSE -> size - 1
-            else -> preferredIndex.coerceIn(0, size - 1)
-        }
-    }
+
 
     /**
      * 记录**当前正在播放的单个文件**到最近播放（文件级）。

@@ -54,13 +54,13 @@
 
 ## 7. 提取 PlaybackSessionFactory
 
-- [ ] 7.1 定义 PlaybackSession 与 PlaybackSource，并为不可变 items、title 和 startIndex 编写模型测试
-- [ ] 7.2 为目录缓存、数据库播放列表和最近播放三种来源编写 SessionFactory 单测
-- [ ] 7.3 覆盖最近 100 条、目标不在快照、fsId无效、空历史和中文路径场景
-- [ ] 7.4 实现 PlaybackSessionFactory，确保最近播放只查询一个一致快照
-- [ ] 7.5 将三个 initialize 入口迁移为获取 Session 后统一 applySession
-- [ ] 7.6 删除 ViewModel 内 Room实体和 PlaylistItem 到播放会话的组装逻辑
-- [ ] 7.7 运行自动化门禁并在目标 TV 验证三个入口及最近播放快速选播内容
+- [x] 7.1 定义 PlaybackSession 与 PlaybackSource，并为不可变 items、title 和 startIndex 编写模型测试
+- [x] 7.2 为目录缓存、数据库播放列表和最近播放三种来源编写 SessionFactory 单测
+- [x] 7.3 覆盖最近 100 条、目标不在快照、fsId无效、空历史和中文路径场景
+- [x] 7.4 实现 PlaybackSessionFactory，确保最近播放只查询一个一致快照
+- [x] 7.5 将三个 initialize 入口迁移为获取 Session 后统一 applySession
+- [x] 7.6 删除 ViewModel 内 Room实体和 PlaylistItem 到播放会话的组装逻辑
+- [x] 7.7 运行自动化门禁并在目标 TV 验证三个入口及最近播放快速选播内容
 
 ## 8. 提取 PlaybackQueueNavigator
 

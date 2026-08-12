@@ -442,13 +442,17 @@ class PlaybackViewModelTest {
 
     private fun viewModel() = PlaybackViewModel(
         settingsRepository = settingsRepository,
-        playlistCache = playlistCache,
         authService = authService,
         fileRepository = fileRepository,
         historyRepository = historyRepository,
-        playlistRepository = playlistRepository,
         locationExtractionService = locationExtractionService,
         urlResolver = PlayableUrlResolver(authService, fileRepository),
+        sessionFactory = PlaybackSessionFactory(
+            playlistCache = playlistCache,
+            playlistRepository = playlistRepository,
+            historyRepository = historyRepository,
+            settingsRepository = settingsRepository,
+        ),
     )
 
     private fun history(
