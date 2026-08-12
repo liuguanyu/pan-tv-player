@@ -470,6 +470,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     }
 
     private fun togglePlayback() {
+        // 图片始终为播放态，不响应暂停/恢复。
+        if (viewModel.uiState.value.isCurrentImage) return
         if (viewModel.uiState.value.isPlaying) {
             videoPlayerEngine.pause()
             viewModel.setPlaying(false)
@@ -753,7 +755,11 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
-        viewModel.setPlaying(isPlaying)
+        // 视频引擎回调：仅在当前为视频时更新 isPlaying。
+        // 图片始终为播放态，不受引擎事件影响。
+        if (viewModel.uiState.value.isCurrentVideo) {
+            viewModel.setPlaying(isPlaying)
+        }
     }
 
     override fun onError(error: androidx.media3.common.PlaybackException) {
@@ -847,7 +853,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         // 只 stop 不 release：引擎为进程级单例（复用底层 LibVLC 原生对象），
         // release() 会销毁原生 LibVLC，Activity 重建后再用会崩溃/触发 finalizer 断言。
         videoPlayerEngine.stop()
-        bgmCoordinator.release()
+        bgmCoordinator.stop()
         videoOutputSurface?.release()
         videoOutputSurface = null
         super.onDestroy()

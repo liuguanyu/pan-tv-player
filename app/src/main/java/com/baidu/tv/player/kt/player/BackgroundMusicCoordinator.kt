@@ -142,7 +142,22 @@ class BackgroundMusicCoordinator @Inject constructor(
         player.pause()
     }
 
-    /** 释放资源：取消协程、释放播放器。幂等。 */
+    /**
+     * 停止 BGM 播放和解析，但保留协程作用域和播放器实例。
+     *
+     * 用于 Activity onDestroy：因为协调器是 @Singleton，下一个 Activity 实例
+     * 会复用同一实例，不能永久取消 scope 或释放 player。
+     */
+    fun stop() {
+        resolveJob?.cancel()
+        resolveJob = null
+        player.stop()
+        _state.value = BgmState.Disabled
+        resolvedUrl = null
+        selection = null
+    }
+
+    /** 释放资源：取消协程、释放播放器。幂等。仅用于进程级清理。 */
     fun release() {
         resolveJob?.cancel()
         resolveJob = null

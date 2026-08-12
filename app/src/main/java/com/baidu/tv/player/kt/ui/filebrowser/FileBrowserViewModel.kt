@@ -34,6 +34,8 @@ class FileBrowserViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val mediaType: Int = savedStateHandle[FileBrowserActivity.EXTRA_MEDIA_TYPE] ?: MediaType.ALL.value
+    /** 当前文件浏览模式是否为音频选择（用于 BGM 选曲）。 */
+    val isAudioMode: Boolean get() = MediaType.fromCode(mediaType) == MediaType.AUDIO
     private val initialPath: String = savedStateHandle[FileBrowserActivity.EXTRA_INITIAL_PATH] ?: ROOT_PATH
     private val initialMultiSelectMode: Boolean = savedStateHandle[FileBrowserActivity.EXTRA_MULTI_SELECT_MODE] ?: false
 

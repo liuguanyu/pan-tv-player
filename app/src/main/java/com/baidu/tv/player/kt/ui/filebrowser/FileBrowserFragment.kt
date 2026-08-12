@@ -135,6 +135,8 @@ class FileBrowserFragment : Fragment() {
         adapter.setGridMode(state.isGridMode)
         binding.btnPlaySelected.text = if (state.multiSelectMode) "确认选择" else "播放当前列表"
         binding.btnPlaySelected.isEnabled = !state.isLoading && !state.isCreatingPlaylist
+        // BGM 选曲模式下隐藏"播放当前列表"按钮，此模式仅用于选择单个音频文件。
+        binding.btnPlaySelected.visibility = if (viewModel.isAudioMode) View.GONE else View.VISIBLE
         adapter.setMultiSelectMode(state.multiSelectMode)
         adapter.setSelectedPaths(state.selectedPaths)
         adapter.submitFiles(state.files)
