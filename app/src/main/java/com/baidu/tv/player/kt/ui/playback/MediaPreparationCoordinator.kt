@@ -3,11 +3,8 @@ package com.baidu.tv.player.kt.ui.playback
 import android.util.Log
 import com.baidu.tv.player.kt.auth.BaiduAuthService
 import com.baidu.tv.player.kt.model.FileInfo
-import com.baidu.tv.player.kt.model.MediaType
-import com.baidu.tv.player.kt.model.PlaybackHistory
 import com.baidu.tv.player.kt.repository.FileRepository
 import com.baidu.tv.player.kt.repository.PlayableUrlResolver
-import com.baidu.tv.player.kt.repository.PlaybackHistoryRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -60,7 +57,8 @@ interface PrepareCallback {
  * - **预加载只写缓存**：[preloadNextFile] 不修改 `currentIndex`/`currentFile`，
  *   只把解析结果写入 [dlinkCache]，失败静默。
  * - **预加载去重**：同一 fsId 不重复请求；通过 [preloadMutex] 串行化避免并发重复。
- * - **历史写库失败不中断播放**：`insertHistory` 捕获非取消异常并记录日志。
+ * - **历史写库失败不中断播放**：历史写入委托给 [PlaybackHistoryRecorder]，
+ *   由其捕获非取消异常并记录日志。
  * - HTTP 头由调用方通过 [PlayableUrlResolver] 控制（`User-Agent: pan.baidu.com`，无超时、无缓存）。
  *
  * 线程安全：所有方法应在同一线程（主线程）调用。内部 [scope] 由调用方注入
@@ -69,7 +67,7 @@ interface PrepareCallback {
 @Singleton
 class MediaPreparationCoordinator @Inject constructor(
     private val urlResolver: PlayableUrlResolver,
-    private val historyRepository: PlaybackHistoryRepository,
+    private val historyRecorder: PlaybackHistoryRecorder,
     private val authService: BaiduAuthService,
     private val fileRepository: FileRepository,
 ) {
@@ -145,7 +143,7 @@ class MediaPreparationCoordinator @Inject constructor(
                 if (gen != currentGeneration) return@launch
                 dlinkCache[file.fsId] = url
                 callback.onPrepareSuccess(file, url)
-                insertHistory(file, uiStateRef.value)
+                historyRecorder.record(file, uiStateRef.value, fileDetailCache[file.fsId])
             } catch (c: CancellationException) {
                 throw c
             } catch (e: Exception) {
@@ -230,46 +228,6 @@ class MediaPreparationCoordinator @Inject constructor(
         val token = authService.getAccessToken().orEmpty()
         check(token.isNotEmpty()) { "未获取到访问令牌，请先登录" }
         return fileRepository.fetchFileDetail(token, fsId)?.also { fileDetailCache[fsId] = it }
-    }
-
-    /**
-     * 记录当前播放文件到最近播放（文件级）。
-     *
-     * - 失败不中断播放：捕获非 [CancellationException] 异常并记录日志。
-     * - [CancellationException] 重新抛出。
-     */
-    private suspend fun insertHistory(file: FileInfo, state: PlaybackUiState) {
-        val filePath = file.path?.takeIf { it.isNotBlank() }
-            ?: file.serverFilename?.let { name ->
-                val folder = state.folderPath.trimEnd('/')
-                if (folder.isNotEmpty()) "$folder/$name" else "/$name"
-            }
-            ?: return
-        val fileName = file.serverFilename ?: filePath.substringAfterLast('/')
-        val mediaType = if (file.isVideo()) MediaType.VIDEO.code else MediaType.IMAGE.code
-        val thumbs = file.thumbs ?: fileDetailCache[file.fsId]?.thumbs
-        val cover = sequenceOf(thumbs?.icon, thumbs?.url1, thumbs?.url2, thumbs?.url3)
-            .firstOrNull { url -> !url.isNullOrBlank() && !url.contains("/file/") }
-
-        try {
-            historyRepository.insert(
-                PlaybackHistory(
-                    folderPath = filePath,
-                    folderName = fileName,
-                    mediaType = mediaType,
-                    fileCount = 1,
-                    createTime = System.currentTimeMillis(),
-                    coverImagePath = cover,
-                    sourcePlaylistId = state.sourcePlaylistId,
-                    sourceFolderPath = state.sourceFolderPath,
-                    fsId = file.fsId,
-                ),
-            )
-        } catch (c: CancellationException) {
-            throw c
-        } catch (e: Exception) {
-            Log.e(TAG, "更新最近播放失败: $filePath", e)
-        }
     }
 
     private companion object {

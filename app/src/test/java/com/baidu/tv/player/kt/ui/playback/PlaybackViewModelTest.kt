@@ -542,7 +542,7 @@ class PlaybackViewModelTest {
         queueNavigator = PlaybackQueueNavigator(),
         preparationCoordinator = MediaPreparationCoordinator(
             urlResolver = PlayableUrlResolver(authService, fileRepository),
-            historyRepository = historyRepository,
+            historyRecorder = PlaybackHistoryRecorder(historyRepository),
             authService = authService,
             fileRepository = fileRepository,
         ),

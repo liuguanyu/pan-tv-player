@@ -93,10 +93,10 @@
 
 ## 11. 提取 PlaybackHistoryRecorder
 
-- [ ] 11.1 为路径回退、媒体类型、来源上下文和封面候选优先级编写映射测试
-- [ ] 11.2 为普通 Room异常不阻断播放、CancellationException传播和相同路径去重编写测试
-- [ ] 11.3 实现 PlaybackHistoryRecorder并迁移 PlaybackHistory 构建与写入降级策略
-- [ ] 11.4 将 ViewModel 历史写入替换为 Recorder 委托并删除旧映射逻辑
+- [x] 11.1 为路径回退、媒体类型、来源上下文和封面候选优先级编写映射测试
+- [x] 11.2 为普通 Room异常不阻断播放、CancellationException传播和相同路径去重编写测试
+- [x] 11.3 实现 PlaybackHistoryRecorder并迁移 PlaybackHistory 构建与写入降级策略
+- [x] 11.4 将 ViewModel 历史写入替换为 Recorder 委托并删除旧映射逻辑
 - [ ] 11.5 运行自动化门禁并验证最近播放顺序、100 条裁剪和写库失败降级
 
 ## 12. 收缩 PlaybackViewModel
