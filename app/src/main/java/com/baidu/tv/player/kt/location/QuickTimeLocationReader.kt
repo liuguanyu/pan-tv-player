@@ -69,7 +69,13 @@ class QuickTimeLocationReader @Inject constructor(
 
     internal fun parseMdtaLocation(metaAtom: ByteArray): String? {
         val metaHeader = atomHeaderSize(metaAtom, 0) ?: return null
-        var offset = metaHeader + FULL_BOX_HEADER_BYTES
+        // ISO BMFF meta 是 FullBox（header 后有 version/flags）；Apple QuickTime 原始 MOV
+        // 则可能在 header 后直接放 hdlr。根据首个合法子 atom 自动识别两种布局。
+        var offset = when {
+            hasValidAtomAt(metaAtom, metaHeader) -> metaHeader
+            hasValidAtomAt(metaAtom, metaHeader + FULL_BOX_HEADER_BYTES) -> metaHeader + FULL_BOX_HEADER_BYTES
+            else -> return null
+        }
         var keys: Map<Int, String> = emptyMap()
         var ilstRange: IntRange? = null
 
@@ -222,6 +228,11 @@ class QuickTimeLocationReader @Inject constructor(
         private const val MAX_LEGACY_ATOM_BYTES = 64 * 1024
         private const val MAX_SINGLE_RANGE_BYTES = MAX_METADATA_ATOM_BYTES
         private val ISO_6709_REGEX = Regex("[+-]\\d{1,3}(?:\\.\\d+)[+-]\\d{1,3}(?:\\.\\d+)(?:[+-]\\d+(?:\\.\\d+)?)?/")
+
+        private fun hasValidAtomAt(bytes: ByteArray, offset: Int): Boolean {
+            val size = atomSize(bytes, offset) ?: return false
+            return size >= ATOM_HEADER_BYTES && offset + size <= bytes.size
+        }
 
         private fun atomSize(bytes: ByteArray, offset: Int): Int? {
             if (offset < 0 || offset + 8 > bytes.size) return null

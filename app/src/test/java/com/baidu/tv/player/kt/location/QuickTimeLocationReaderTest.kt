@@ -53,6 +53,18 @@ class QuickTimeLocationReaderTest {
     }
 
     @Test
+    fun parseMdtaLocation_readsAppleQuickTimeMetaWithoutFullBoxHeader() {
+        val location = "+39.9485+116.4729+036.863/"
+        val meta = quickTimeMetaAtom(
+            "com.apple.quicktime.location.accuracy.horizontal" to "14.245955",
+            "com.apple.quicktime.location.ISO6709" to location,
+            "com.apple.quicktime.model" to "iPhone 16 Pro",
+        )
+
+        assertEquals(location, reader.parseMdtaLocation(meta))
+    }
+
+    @Test
     fun parseMdtaLocation_missingLocationKeyReturnsNull() {
         val meta = metaAtom(
             "com.apple.quicktime.make" to "Apple",
@@ -70,7 +82,15 @@ class QuickTimeLocationReaderTest {
         )
     }
 
-    private fun metaAtom(vararg entries: Pair<String, String>): ByteArray {
+    private fun metaAtom(vararg entries: Pair<String, String>): ByteArray =
+        fullBox("meta", metadataChildren(entries))
+
+    private fun quickTimeMetaAtom(vararg entries: Pair<String, String>): ByteArray {
+        val handler = atom("hdlr", ByteArray(4) + ByteArray(8) + "mdta".toByteArray(StandardCharsets.ISO_8859_1) + ByteArray(12))
+        return atom("meta", handler + metadataChildren(entries))
+    }
+
+    private fun metadataChildren(entries: Array<out Pair<String, String>>): ByteArray {
         val keyPayload = ByteArrayOutputStream().apply {
             write(intBytes(entries.size))
             entries.forEach { (key, _) ->
@@ -90,7 +110,7 @@ class QuickTimeLocationReaderTest {
             }
         }.toByteArray()
         val ilst = atom("ilst", ilstPayload)
-        return fullBox("meta", keys + ilst)
+        return keys + ilst
     }
 
     private fun fullBox(type: String, payload: ByteArray): ByteArray = atom(type, ByteArray(4) + payload)
