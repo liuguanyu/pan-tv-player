@@ -29,7 +29,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
-import kotlin.random.Random
 
 private const val DEFAULT_IMAGE_DISPLAY_MS = 8_000L
 private const val DEFAULT_TRANSITION_MS = 1_000L
@@ -101,6 +100,7 @@ class PlaybackViewModel @Inject constructor(
     private val locationExtractionService: LocationExtractionService,
     private val urlResolver: PlayableUrlResolver,
     private val sessionFactory: PlaybackSessionFactory,
+    private val queueNavigator: PlaybackQueueNavigator,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlaybackUiState())
@@ -116,7 +116,6 @@ class PlaybackViewModel @Inject constructor(
     private var preloadJob: Job? = null
     private var locationJob: Job? = null
     private var imageAutoNextJob: Job? = null
-    private var randomQueue = ArrayDeque<Int>()
 
     init {
         observeSettings()
@@ -126,7 +125,7 @@ class PlaybackViewModel @Inject constructor(
     private fun observeSettings() {
         viewModelScope.launch {
             settingsRepository.playMode.collect { mode ->
-                randomQueue.clear()
+                queueNavigator.clearRandomQueue()
                 _uiState.update { it.copy(playMode = mode) }
             }
         }
@@ -263,12 +262,14 @@ class PlaybackViewModel @Inject constructor(
     }
 
     fun playNext() {
-        val nextIndex = calculateNextIndex(forward = true) ?: return
+        val state = _uiState.value
+        val nextIndex = queueNavigator.nextIndex(state.files.size, state.currentIndex, state.playMode, forward = true) ?: return
         switchToIndex(nextIndex)
     }
 
     fun playPrevious() {
-        val prevIndex = calculateNextIndex(forward = false) ?: return
+        val state = _uiState.value
+        val prevIndex = queueNavigator.nextIndex(state.files.size, state.currentIndex, state.playMode, forward = false) ?: return
         switchToIndex(prevIndex)
     }
 
@@ -284,7 +285,7 @@ class PlaybackViewModel @Inject constructor(
             PlayMode.SINGLE -> PlayMode.REVERSE
             PlayMode.REVERSE -> PlayMode.SEQUENTIAL
         }
-        randomQueue.clear()
+        queueNavigator.clearRandomQueue()
         _uiState.update { it.copy(playMode = next) }
         // 播放页内切换的模式同步持久化，与设置页保持一致。
         settingsRepository.setPlayMode(next)
@@ -308,7 +309,7 @@ class PlaybackViewModel @Inject constructor(
         preloadJob = viewModelScope.launch {
             preloadMutex.withLock {
                 val state = _uiState.value
-                val nextIndex = calculateNextIndexForState(state, forward = true) ?: return@withLock
+                val nextIndex = queueNavigator.nextIndex(state.files.size, state.currentIndex, state.playMode, forward = true) ?: return@withLock
                 val file = state.files.getOrNull(nextIndex) ?: return@withLock
                 if (dlinkCache.containsKey(file.fsId)) return@withLock
                 runCatching { resolvePlayableUrl(file) }
@@ -448,30 +449,6 @@ class PlaybackViewModel @Inject constructor(
         check(token.isNotEmpty()) { "未获取到访问令牌，请先登录" }
         return fileRepository.fetchFileDetail(token, fsId)?.also { fileDetailCache[fsId] = it }
     }
-
-    private fun calculateNextIndex(forward: Boolean): Int? = calculateNextIndexForState(_uiState.value, forward)
-
-    private fun calculateNextIndexForState(state: PlaybackUiState, forward: Boolean): Int? {
-        val size = state.files.size
-        if (size == 0) return null
-        if (size == 1) return 0
-        return when (state.playMode) {
-            PlayMode.SINGLE -> state.currentIndex
-            PlayMode.SEQUENTIAL -> if (forward) (state.currentIndex + 1) % size else (state.currentIndex - 1 + size) % size
-            PlayMode.REVERSE -> if (forward) (state.currentIndex - 1 + size) % size else (state.currentIndex + 1) % size
-            PlayMode.RANDOM -> nextRandomIndex(size, state.currentIndex)
-        }
-    }
-
-    private fun nextRandomIndex(size: Int, currentIndex: Int): Int {
-        if (randomQueue.isEmpty()) {
-            val candidates = (0 until size).filter { it != currentIndex }.shuffled(Random(System.nanoTime()))
-            randomQueue.addAll(candidates)
-        }
-        return randomQueue.removeFirstOrNull() ?: ((currentIndex + 1) % size)
-    }
-
-
 
     /**
      * 记录**当前正在播放的单个文件**到最近播放（文件级）。

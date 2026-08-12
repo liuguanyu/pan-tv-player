@@ -452,7 +452,9 @@ class PlaybackViewModelTest {
             playlistRepository = playlistRepository,
             historyRepository = historyRepository,
             settingsRepository = settingsRepository,
+            queueNavigator = PlaybackQueueNavigator(),
         ),
+        queueNavigator = PlaybackQueueNavigator(),
     )
 
     private fun history(

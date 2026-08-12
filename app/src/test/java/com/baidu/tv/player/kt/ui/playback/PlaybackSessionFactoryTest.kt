@@ -57,6 +57,7 @@ class PlaybackSessionFactoryTest {
         playlistRepository = playlistRepository,
         historyRepository = historyRepository,
         settingsRepository = settingsRepository,
+        queueNavigator = PlaybackQueueNavigator(),
     )
 
     private fun video(name: String, fsId: Long) = FileInfo(

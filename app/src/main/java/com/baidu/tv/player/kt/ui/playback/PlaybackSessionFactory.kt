@@ -11,7 +11,6 @@ import com.baidu.tv.player.kt.util.PlaylistCache
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.random.Random
 
 /**
  * 播放会话工厂（Phase 7）。
@@ -33,6 +32,7 @@ class PlaybackSessionFactory @Inject constructor(
     private val playlistRepository: PlaylistRepository,
     private val historyRepository: PlaybackHistoryRepository,
     private val settingsRepository: SettingsRepository,
+    private val queueNavigator: PlaybackQueueNavigator,
 ) {
 
     // ------------------------------------------------------------------
@@ -170,14 +170,8 @@ class PlaybackSessionFactory @Inject constructor(
      * 直接读取 [SettingsRepository.playMode] 的 StateFlow 当前值，
      * 避免依赖尚未 collect 完成的 uiState.playMode。
      */
-    private fun resolveStartIndex(size: Int, preferredIndex: Int): Int {
-        if (size <= 1) return preferredIndex.coerceIn(0, maxOf(0, size - 1))
-        return when (settingsRepository.playMode.value) {
-            com.baidu.tv.player.kt.model.PlayMode.RANDOM -> Random(System.nanoTime()).nextInt(size)
-            com.baidu.tv.player.kt.model.PlayMode.REVERSE -> size - 1
-            else -> preferredIndex.coerceIn(0, size - 1)
-        }
-    }
+    private fun resolveStartIndex(size: Int, preferredIndex: Int): Int =
+        queueNavigator.initialIndex(size, preferredIndex, settingsRepository.playMode.value)
 
     // ------------------------------------------------------------------
     // Room 实体 → FileInfo 映射（从 ViewModel 迁移）

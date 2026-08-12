@@ -64,11 +64,11 @@
 
 ## 8. 提取 PlaybackQueueNavigator
 
-- [ ] 8.1 为顺序、倒序、单曲的中间项和首尾循环编写纯 Kotlin 参数化测试
-- [ ] 8.2 为随机模式注入固定随机源并测试单元素、不立即重复和一轮不重复
-- [ ] 8.3 为列表为空、索引越界、列表变化和不可变 Session 编写边界测试
-- [ ] 8.4 实现 PlaybackQueueNavigator并迁移 next、previous、initialIndex 计算
-- [ ] 8.5 从 PlaybackViewModel 删除旧导航和随机队列算法
+- [x] 8.1 为顺序、倒序、单曲的中间项和首尾循环编写纯 Kotlin 参数化测试
+- [x] 8.2 为随机模式注入固定随机源并测试单元素、不立即重复和一轮不重复
+- [x] 8.3 为列表为空、索引越界、列表变化和不可变 Session 编写边界测试
+- [x] 8.4 实现 PlaybackQueueNavigator并迁移 next、previous、initialIndex 计算
+- [x] 8.5 从 PlaybackViewModel 删除旧导航和随机队列算法
 - [ ] 8.6 运行自动化门禁并在目标 TV 验证四种播放模式
 
 ## 9. 提取媒体准备与并发控制
