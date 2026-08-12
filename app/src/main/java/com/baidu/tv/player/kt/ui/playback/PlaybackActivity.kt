@@ -26,7 +26,7 @@ import com.baidu.tv.player.kt.R
 import com.baidu.tv.player.kt.databinding.ActivityPlaybackBinding
 import com.baidu.tv.player.kt.model.FileInfo
 import com.baidu.tv.player.kt.model.MediaType
-import com.baidu.tv.player.kt.player.BackgroundMusicPlayer
+import com.baidu.tv.player.kt.player.BackgroundAudioPlayer
 import com.baidu.tv.player.kt.player.HybridVideoPlayerEngine
 import com.baidu.tv.player.kt.player.Media3VideoPlayerEngine
 import com.baidu.tv.player.kt.player.PlaybackResult
@@ -101,7 +101,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     private var lastPresentationState: Pair<Int, String>? = null
     private var quickSelectorCurrentKey: String? = null
     private var quickSelectorDataKey: String? = null
-    private lateinit var backgroundMusicPlayer: BackgroundMusicPlayer
+    @Inject lateinit var backgroundMusicPlayer: BackgroundAudioPlayer
     private var bgmSelectionKey: Long = 0L
     private var bgmUrl: String? = null
     private var bgmResolveJob: Job? = null
@@ -112,7 +112,6 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         super.onCreate(savedInstanceState)
         binding = ActivityPlaybackBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        backgroundMusicPlayer = BackgroundMusicPlayer(applicationContext)
         // TextureView 与普通 View 在同一合成层，可在 Sony Android 9 上可靠应用旋转，
         // 同时不会像 SurfaceView 那样挖穿背景或在旋转后只剩声音。
         hideSystemBars()

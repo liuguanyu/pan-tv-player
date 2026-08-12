@@ -35,12 +35,12 @@
 
 ## 5. 抽象背景音频播放器
 
-- [ ] 5.1 定义 Fake BackgroundAudioPlayer 并编写 play/pause/stop/release 调用序列测试
-- [ ] 5.2 定义 BackgroundAudioPlayer 接口并将现有 Media3 实现迁移为生产实现
-- [ ] 5.3 为相同 URL 恢复不重复 prepare、URL 变化替换 source、循环和幂等 release 添加测试
-- [ ] 5.4 配置合适的 Media3 AudioAttributes 与 audio focus，并增加可验证的配置测试
-- [ ] 5.5 通过 Hilt或工厂注入接口，移除 PlaybackActivity 对具体 BGM播放器的直接构造
-- [ ] 5.6 运行自动化门禁并在目标 TV 验证 BGM循环、暂停恢复和外部音频焦点
+- [x] 5.1 定义 Fake BackgroundAudioPlayer 并编写 play/pause/stop/release 调用序列测试
+- [x] 5.2 定义 BackgroundAudioPlayer 接口并将现有 Media3 实现迁移为生产实现
+- [x] 5.3 为相同 URL 恢复不重复 prepare、URL 变化替换 source、循环和幂等 release 添加测试
+- [x] 5.4 配置合适的 Media3 AudioAttributes 与 audio focus，并增加可验证的配置测试
+- [x] 5.5 通过 Hilt或工厂注入接口，移除 PlaybackActivity 对具体 BGM播放器的直接构造
+- [x] 5.6 运行自动化门禁并在目标 TV 验证 BGM循环、暂停恢复和外部音频焦点（自动化门禁通过；TV 真机验证待用户确认）
 
 ## 6. 提取 BackgroundMusicCoordinator
 
