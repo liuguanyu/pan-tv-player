@@ -301,9 +301,9 @@ class PlaybackViewModelTest {
     }
 
     @Test
-    fun initializeFromHistory_targetNotInRecentSnapshot_currentlyFallsBackToStart() = runTest {
-        // 表征测试：被点击的历史记录 fsId 不在最近 100 条快照中时，
-        // 当前行为回退到 resolveStartIndex（Phase 2.5 将改为显示错误且不播放）。
+    fun initializeFromHistory_targetNotInRecentSnapshot_emitsError() = runTest {
+        // Phase 2.5 修复：被点击的历史记录 fsId 不在最近 100 条快照中时，
+        // 显示明确错误且不回退播放其他记录。
         val histories = listOf(
             history(id = 11, name = "a.mp4", fsId = 1),
             history(id = 12, name = "b.mp4", fsId = 2),
@@ -320,12 +320,38 @@ class PlaybackViewModelTest {
             video("a.mp4", fsId = 1, dlink = "https://d/1")
 
         val vm = viewModel()
-        vm.initializeFromHistory(99)
-        advanceUntilIdle()
+        vm.events.test {
+            vm.initializeFromHistory(99)
+            advanceUntilIdle()
+            val event = awaitItem()
+            assertTrue(event is PlaybackUiEvent.ShowError)
+            assertEquals("该记录不在最近播放中", (event as PlaybackUiEvent.ShowError).message)
+            cancelAndIgnoreRemainingEvents()
+        }
+        // 确保没有加载播放列表
+        assertTrue(vm.uiState.value.files.isEmpty())
+    }
 
-        // 当前行为：回退到 start index 0（顺序模式）
-        assertEquals(0, vm.uiState.value.currentIndex)
-        assertEquals(1L, vm.uiState.value.currentFile?.fsId)
+    @Test
+    fun initializeFromHistory_clickedHistoryNotFound_emitsError() = runTest {
+        // Phase 2.5: getHistoryById 返回 null 时也应报错，不回退。
+        val histories = listOf(
+            history(id = 11, name = "a.mp4", fsId = 1),
+        )
+        every { historyRepository.getRecentHistory(PlaybackHistoryRepository.MAX_HISTORY) } returns
+            MutableStateFlow(histories)
+        every { historyRepository.getHistoryById(999) } returns MutableStateFlow(null)
+
+        val vm = viewModel()
+        vm.events.test {
+            vm.initializeFromHistory(999)
+            advanceUntilIdle()
+            val event = awaitItem()
+            assertTrue(event is PlaybackUiEvent.ShowError)
+            assertEquals("该记录不在最近播放中", (event as PlaybackUiEvent.ShowError).message)
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertTrue(vm.uiState.value.files.isEmpty())
     }
 
     @Test

@@ -242,6 +242,34 @@ class PlaylistQuickSelectorAdapterTest {
         adapter.updateThumbnails(mapOf(999L to "https://thumb/999"))
     }
 
+    // ------------------------------------------------------------------
+    // Task 2.3: 焦点项与当前项不同时，底部蓝条只表示当前项
+    // ------------------------------------------------------------------
+
+    @Test
+    fun focusChange_focusedNonCurrent_focusBarStaysGone() {
+        val adapter = PlaylistQuickSelectorAdapter()
+        val fileA = file("a.mp4", fsId = 1)
+        val fileB = file("b.mp4", fsId = 2)
+        adapter.configure(listOf(fileA, fileB), fileA) { }
+
+        val holder = createHolder()
+        adapter.onBindViewHolder(holder, 1) // fileB, 非当前项
+
+        // 初始状态：非当前项 → GONE
+        assertEquals(View.GONE, holder.focusBar.visibility)
+
+        // 触发 holder 获得焦点：底部蓝条仍应保持 GONE（只有当前项显示蓝条）
+        holder.itemView.isFocusable = true
+        holder.itemView.isFocusableInTouchMode = true
+        holder.itemView.requestFocus()
+
+        assertEquals(View.GONE, holder.focusBar.visibility)
+    }
+
+    // 当前项获得焦点时蓝条保持 VISIBLE 需要真实 RecyclerView 设置 bindingAdapterPosition，
+    // 在纯 Adapter 单测中无法可靠验证；初始 onBindViewHolder 已覆盖正确绑定。
+
     @Test
     fun configure_copiesItemsDefensively() {
         val adapter = PlaylistQuickSelectorAdapter()

@@ -116,7 +116,8 @@ class PlaylistQuickSelectorAdapter : RecyclerView.Adapter<PlaylistQuickSelectorA
             val boundPosition = holder.bindingAdapterPosition
             val stillCurrent = boundPosition != RecyclerView.NO_POSITION &&
                 items[boundPosition].stableKey() == highlightedFileKey
-            holder.focusBar.visibility = if (hasFocus || stillCurrent) View.VISIBLE else View.GONE
+            // 底部蓝条只表示当前播放项；焦点由 card_selector 前景 drawable 单独表达。
+            holder.focusBar.visibility = if (stillCurrent) View.VISIBLE else View.GONE
         }
     }
 

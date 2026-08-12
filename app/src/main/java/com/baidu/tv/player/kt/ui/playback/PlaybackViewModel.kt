@@ -271,7 +271,11 @@ class PlaybackViewModel @Inject constructor(
                 files.indexOfFirst { it.fsId == clickedHistory.fsId }.takeIf { it >= 0 }
             } else {
                 null
-            } ?: resolveStartIndex(files.size, 0)
+            }
+            if (safeIndex == null) {
+                emitError("该记录不在最近播放中")
+                return@launch
+            }
             _uiState.update {
                 it.copy(
                     playlistId = "history-$historyId",

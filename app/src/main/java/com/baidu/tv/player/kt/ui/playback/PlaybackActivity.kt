@@ -32,6 +32,8 @@ import com.baidu.tv.player.kt.player.Media3VideoPlayerEngine
 import com.baidu.tv.player.kt.player.PlaybackResult
 import com.baidu.tv.player.kt.player.UnsupportedReason
 import com.baidu.tv.player.kt.player.VideoPlayerEngine
+import com.baidu.tv.player.kt.player.computeBgmAction
+import com.baidu.tv.player.kt.player.BgmTargetAction
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.baidu.tv.player.kt.auth.BaiduAuthService
@@ -40,6 +42,7 @@ import com.baidu.tv.player.kt.repository.BgmSelection
 import com.baidu.tv.player.kt.repository.SettingsRepository
 import com.baidu.tv.player.kt.ui.playback.image.ImageBackgroundFactory
 import com.baidu.tv.player.kt.ui.playback.image.ImageEffectFactory
+import kotlinx.coroutines.CancellationException
 import com.baidu.tv.player.kt.ui.settings.SettingsActivity
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.target.BitmapImageViewTarget
@@ -428,30 +431,42 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
             backgroundMusicPlayer.stop()
             return
         }
+        // 解析新选择的 BGM：只在成功后才更新 bgmSelectionKey，使失败后可重试。
         if (selection.fsId != bgmSelectionKey) {
             bgmResolveJob?.cancel()
             bgmUrl = null
-            bgmSelectionKey = selection.fsId
             backgroundMusicPlayer.stop()
             bgmResolveJob = lifecycleScope.launch {
-                runCatching {
+                try {
                     val token = authService.getAccessToken().orEmpty()
                     val detail = fileRepository.fetchFileDetail(token, selection.fsId)
                     val dlink = detail?.dlink?.takeIf { it.isNotBlank() }
                         ?: error("背景音乐缺少下载链接")
-                    if (dlink.contains("access_token=")) dlink else dlink + (if (dlink.contains('?')) "&" else "?") + "access_token=" + token
-                }.onSuccess { url ->
+                    val url = if (dlink.contains("access_token=")) dlink
+                        else dlink + (if (dlink.contains('?')) "&" else "?") + "access_token=" + token
                     bgmUrl = url
-                    if (viewModel.uiState.value.isCurrentImage && !bgmPausedByLifecycle) {
+                    bgmSelectionKey = selection.fsId
+                    val action = computeBgmAction(state, hasBgmSelection = true, isBgmResolved = true, isForeground = !bgmPausedByLifecycle)
+                    if (action == BgmTargetAction.PLAY) {
                         backgroundMusicPlayer.play(url, buildRequestHeaders())
                     }
-                }.onFailure { Log.w(TAG, "背景音乐加载失败", it) }
+                } catch (c: CancellationException) {
+                    throw c
+                } catch (e: Exception) {
+                    Log.w(TAG, "背景音乐加载失败", e)
+                }
             }
+            return
         }
-        if (state.isCurrentVideo) {
-            backgroundMusicPlayer.pause()
-        } else if (state.isCurrentImage && !bgmPausedByLifecycle) {
-            bgmUrl?.let { backgroundMusicPlayer.play(it, buildRequestHeaders()) }
+        // 已解析完成的选择：根据决策函数执行动作
+        if (bgmUrl != null) {
+            val action = computeBgmAction(state, hasBgmSelection = true, isBgmResolved = true, isForeground = !bgmPausedByLifecycle)
+            when (action) {
+                BgmTargetAction.PLAY -> backgroundMusicPlayer.play(bgmUrl!!, buildRequestHeaders())
+                BgmTargetAction.PAUSE -> backgroundMusicPlayer.pause()
+                BgmTargetAction.STOP -> backgroundMusicPlayer.stop()
+                BgmTargetAction.NONE -> { }
+            }
         }
     }
 
