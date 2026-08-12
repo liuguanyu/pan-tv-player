@@ -1,5 +1,6 @@
 package com.baidu.tv.player.kt.location
 
+import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -17,7 +18,7 @@ class QuickTimeLocationReaderTest {
     private val reader = QuickTimeLocationReader(OkHttpClient())
 
     @Test
-    fun readLocationString_skipsLargeMdatAndReadsTrailingMoovByRange() {
+    fun readLocationString_skipsLargeMdatAndReadsTrailingMoovByRange() = runTest {
         val location = "+31.2304+121.4737+012.300/"
         val meta = metaAtom("com.apple.quicktime.location.ISO6709" to location)
         val ftyp = atom("ftyp", "qt  ".toByteArray(StandardCharsets.ISO_8859_1))

@@ -184,15 +184,15 @@ class LocationExtractorTest {
         private val value: String?,
         private val dateValue: String? = null,
     ) : VideoMetadataReader {
-        override fun readLocationString(url: String): String? = value
-        override fun readDateString(url: String): String? = dateValue
+        override suspend fun readLocationString(url: String): String? = value
+        override suspend fun readDateString(url: String): String? = dateValue
     }
 
     private class ThrowingVideoReader : VideoMetadataReader {
-        override fun readLocationString(url: String): String? =
+        override suspend fun readLocationString(url: String): String? =
             throw IllegalStateException("boom")
 
-        override fun readDateString(url: String): String? =
+        override suspend fun readDateString(url: String): String? =
             throw IllegalStateException("boom")
     }
 }

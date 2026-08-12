@@ -1,5 +1,6 @@
 package com.baidu.tv.player.kt.location
 
+import com.baidu.tv.player.kt.location.geocoding.executeCancellable
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.nio.ByteBuffer
@@ -26,7 +27,7 @@ class QuickTimeLocationReader @Inject constructor(
         networkInterceptors().clear()
     }.build()
 
-    fun readLocationString(url: String): String? {
+    suspend fun readLocationString(url: String): String? {
         val source = HttpRangeSource(rangeClient, url)
         val fileSize = source.fileSize() ?: return null
         val moov = findChild(source, 0L, fileSize, TYPE_MOOV) ?: return null
@@ -44,18 +45,18 @@ class QuickTimeLocationReader @Inject constructor(
         return null
     }
 
-    private fun findMeta(source: HttpRangeSource, moov: Atom): Atom? =
+    private suspend fun findMeta(source: HttpRangeSource, moov: Atom): Atom? =
         findChild(source, moov.contentOffset, moov.endOffset, TYPE_META)
             ?: findChild(source, moov.contentOffset, moov.endOffset, TYPE_UDTA)?.let { udta ->
                 findChild(source, udta.contentOffset, udta.endOffset, TYPE_META)
             }
 
-    private fun findDescendant(source: HttpRangeSource, parent: Atom, containerType: String, targetType: String): Atom? {
+    private suspend fun findDescendant(source: HttpRangeSource, parent: Atom, containerType: String, targetType: String): Atom? {
         val container = findChild(source, parent.contentOffset, parent.endOffset, containerType) ?: return null
         return findChild(source, container.contentOffset, container.endOffset, targetType)
     }
 
-    private fun findChild(source: HttpRangeSource, start: Long, end: Long, targetType: String): Atom? {
+    private suspend fun findChild(source: HttpRangeSource, start: Long, end: Long, targetType: String): Atom? {
         var offset = start
         var count = 0
         while (offset + ATOM_HEADER_BYTES <= end && count++ < MAX_CHILD_ATOMS) {
@@ -143,12 +144,12 @@ class QuickTimeLocationReader @Inject constructor(
         private val client: OkHttpClient,
         private val url: String,
     ) {
-        fun fileSize(): Long? {
+        suspend fun fileSize(): Long? {
             val response = requestRange(0L, ATOM_HEADER_BYTES - 1L) ?: return null
             return response.totalSize
         }
 
-        fun readAtom(offset: Long, parentEnd: Long): Atom? {
+        suspend fun readAtom(offset: Long, parentEnd: Long): Atom? {
             val bytes = requestRange(offset, offset + EXTENDED_ATOM_HEADER_BYTES - 1L)?.bytes ?: return null
             if (bytes.size < ATOM_HEADER_BYTES) return null
             val size32 = readUnsignedInt(bytes, 0)
@@ -174,13 +175,13 @@ class QuickTimeLocationReader @Inject constructor(
             return Atom(offset, size, type, headerSize)
         }
 
-        fun readAtomBytes(atom: Atom, maxBytes: Int): ByteArray? {
+        suspend fun readAtomBytes(atom: Atom, maxBytes: Int): ByteArray? {
             if (atom.size > maxBytes) return null
             return requestRange(atom.offset, atom.endOffset - 1)?.bytes
                 ?.takeIf { it.size.toLong() == atom.size }
         }
 
-        private fun requestRange(start: Long, endInclusive: Long): RangeResponse? {
+        private suspend fun requestRange(start: Long, endInclusive: Long): RangeResponse? {
             if (start < 0 || endInclusive < start || endInclusive - start + 1 > MAX_SINGLE_RANGE_BYTES) return null
             val request = Request.Builder()
                 .url(url)
@@ -188,7 +189,7 @@ class QuickTimeLocationReader @Inject constructor(
                 .header("Range", "bytes=$start-$endInclusive")
                 .get()
                 .build()
-            return client.newCall(request).execute().use { response ->
+            return client.executeCancellable(request).use { response ->
                 if (!response.isSuccessful) return@use null
                 // 非零偏移时服务器若忽略 Range，不能从头读取整个大文件来模拟 seek。
                 if (start > 0 && response.code != 206) return@use null

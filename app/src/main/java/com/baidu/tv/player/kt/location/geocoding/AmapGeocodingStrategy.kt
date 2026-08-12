@@ -2,11 +2,12 @@ package com.baidu.tv.player.kt.location.geocoding
 
 import com.baidu.tv.player.kt.config.BaiduConfig
 import com.baidu.tv.player.kt.location.GpsCoordinate
+import com.google.gson.JsonParser
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
 import javax.inject.Inject
 import kotlin.math.cos
 import kotlin.math.sin
@@ -31,24 +32,27 @@ class AmapGeocodingStrategy @Inject constructor(
         return key.isNotBlank() && key != PLACEHOLDER_KEY
     }
 
-    override suspend fun getAddress(coordinate: GpsCoordinate): String? = withContext(Dispatchers.IO) {
-        if (!isAvailable()) return@withContext null
-        runCatching {
+    override suspend fun getAddress(coordinate: GpsCoordinate): String? {
+        if (!isAvailable()) return null
+        return try {
             val (gcjLat, gcjLon) = wgs84ToGcj02(coordinate.latitude, coordinate.longitude)
             val url = "https://restapi.amap.com/v3/geocode/regeo" +
                 "?key=${BaiduConfig.AMAP_API_KEY}" +
                 "&location=$gcjLon,$gcjLat" +
                 "&extensions=base&output=json"
             val request = Request.Builder().url(url).get().build()
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@use null
-                val body = response.body?.string() ?: return@use null
-                val json = JSONObject(body)
-                if (json.optString("status") != "1") return@use null
-                val regeocode = json.optJSONObject("regeocode") ?: return@use null
-                regeocode.optString("formatted_address").takeIf { it.isNotBlank() }
+            okHttpClient.executeCancellable(request).use { response ->
+                withContext(Dispatchers.IO) {
+                    if (!response.isSuccessful) return@withContext null
+                    val body = response.body?.string() ?: return@withContext null
+                    parseAddress(body)
+                }
             }
-        }.getOrNull()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
     }
 
     companion object {
@@ -59,6 +63,15 @@ class AmapGeocodingStrategy @Inject constructor(
         private const val PI = 3.1415926535897932384626
         private const val A = 6378245.0
         private const val EE = 0.00669342162296594323
+
+        internal fun parseAddress(body: String): String? {
+            val json = JsonParser.parseString(body).asJsonObject
+            if (json.get("status")?.asString != "1") return null
+            return json.getAsJsonObject("regeocode")
+                ?.get("formatted_address")
+                ?.asString
+                ?.takeIf { it.isNotBlank() }
+        }
 
         fun wgs84ToGcj02(lat: Double, lon: Double): Pair<Double, Double> {
             if (outOfChina(lat, lon)) return lat to lon

@@ -32,6 +32,33 @@ class AmapGeocodingStrategyTest {
     }
 
     @Test
+    fun parseAddress_readsRealAmapResponseShape() {
+        val body = """
+            {
+              "status": "1",
+              "regeocode": {
+                "formatted_address": "天津市河北区建昌道街道艳益路83号",
+                "addressComponent": { "province": "天津市", "district": "河北区" }
+              },
+              "info": "OK",
+              "infocode": "10000"
+            }
+        """.trimIndent()
+
+        assertEquals(
+            "天津市河北区建昌道街道艳益路83号",
+            AmapGeocodingStrategy.parseAddress(body),
+        )
+    }
+
+    @Test
+    fun parseAddress_returnsNullForFailedResponse() {
+        val body = """{"status":"0","info":"INVALID_USER_KEY","infocode":"10001"}"""
+
+        assertEquals(null, AmapGeocodingStrategy.parseAddress(body))
+    }
+
+    @Test
     fun wgs84ToGcj02_appliesOffsetWithinChina() {
         val (lat, lon) = AmapGeocodingStrategy.wgs84ToGcj02(39.9042, 116.4074)
         // 中国境内应产生偏移（非原值）。

@@ -2,6 +2,8 @@ package com.baidu.tv.player.kt.location
 
 import android.media.ExifInterface
 import android.util.Log
+import com.baidu.tv.player.kt.location.geocoding.executeCancellable
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
@@ -39,7 +41,7 @@ class LocationExtractor @Inject constructor(
                 .header("Range", "bytes=0-${IMAGE_HEADER_MAX_BYTES - 1}")
                 .get()
                 .build()
-            okHttpClient.newCall(request).execute().use { response ->
+            okHttpClient.executeCancellable(request).use { response ->
                 if (!response.isSuccessful) return@use null
                 val source = response.body?.source() ?: return@use null
                 // 硬上限 128KB：即使服务器忽略 Range 返回整图，也只读取头部即止。
@@ -49,6 +51,7 @@ class LocationExtractor @Inject constructor(
                 parseExifGps(bytes)
             }
         }.getOrElse {
+            if (it is CancellationException) throw it
             Log.d(TAG, "图片 GPS 提取失败，静默返回 null: ${it.message}")
             null
         }
@@ -66,6 +69,8 @@ class LocationExtractor @Inject constructor(
         } catch (e: TimeoutCancellationException) {
             Log.d(TAG, "视频 GPS 提取超时(${VIDEO_TIMEOUT_MS}ms)，静默返回 null")
             null
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.d(TAG, "视频 GPS 提取异常，静默返回 null: ${e.message}")
             null
@@ -83,7 +88,7 @@ class LocationExtractor @Inject constructor(
                 .header("Range", "bytes=0-${IMAGE_HEADER_MAX_BYTES - 1}")
                 .get()
                 .build()
-            okHttpClient.newCall(request).execute().use { response ->
+            okHttpClient.executeCancellable(request).use { response ->
                 if (!response.isSuccessful) return@use null
                 val source = response.body?.source() ?: return@use null
                 val bytes = source.readByteArray(
@@ -92,6 +97,7 @@ class LocationExtractor @Inject constructor(
                 parseExifDateTime(bytes)
             }
         }.getOrElse {
+            if (it is CancellationException) throw it
             Log.d(TAG, "图片拍摄时间提取失败，静默返回 null: ${it.message}")
             null
         }
@@ -109,6 +115,8 @@ class LocationExtractor @Inject constructor(
         } catch (e: TimeoutCancellationException) {
             Log.d(TAG, "视频拍摄时间提取超时(${VIDEO_TIMEOUT_MS}ms)，静默返回 null")
             null
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.d(TAG, "视频拍摄时间提取异常，静默返回 null: ${e.message}")
             null

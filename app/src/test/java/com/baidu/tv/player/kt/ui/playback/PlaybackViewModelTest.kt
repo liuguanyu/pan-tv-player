@@ -21,7 +21,9 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceTimeBy
@@ -94,6 +96,41 @@ class PlaybackViewModelTest {
             assertEquals(1, historySlot.captured.fileCount)
             assertEquals(1L, historySlot.captured.fsId)
             assertEquals("/movies", historySlot.captured.sourceFolderPath)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun switchingItemCancelsPreviousLocationProbe() = runTest {
+        val files = listOf(
+            video("a.mp4", fsId = 1, dlink = "https://d/a"),
+            video("b.mp4", fsId = 2, dlink = "https://d/b"),
+        )
+        playlistCache.put("p", files)
+        val firstStarted = CompletableDeferred<Unit>()
+        val firstCancelled = CompletableDeferred<Unit>()
+        coEvery { locationExtractionService.extractLocation(any(), true) } coAnswers {
+            val url = firstArg<String>()
+            if (url.contains("/a")) {
+                firstStarted.complete(Unit)
+                try {
+                    awaitCancellation()
+                } finally {
+                    firstCancelled.complete(Unit)
+                }
+            }
+            null
+        }
+        val vm = viewModel()
+
+        vm.events.test {
+            vm.initialize("p", MediaType.VIDEO.code, "/movies", 0)
+            assertTrue(awaitItem() is PlaybackUiEvent.PlayVideo)
+            firstStarted.await()
+
+            vm.playFromIndex(1)
+            assertEquals(Unit, firstCancelled.await())
+            assertTrue(awaitItem() is PlaybackUiEvent.PlayVideo)
             cancelAndIgnoreRemainingEvents()
         }
     }

@@ -4,8 +4,9 @@ import android.content.Context
 import android.location.Geocoder
 import com.baidu.tv.player.kt.location.GpsCoordinate
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
 import java.util.Locale
 import javax.inject.Inject
 
@@ -28,20 +29,26 @@ class AndroidGeocoderStrategy @Inject constructor(
     override fun isAvailable(): Boolean = Geocoder.isPresent()
 
     @Suppress("DEPRECATION")
-    override suspend fun getAddress(coordinate: GpsCoordinate): String? = withContext(Dispatchers.IO) {
-        if (!isAvailable()) return@withContext null
-        runCatching {
-            val geocoder = Geocoder(context, Locale.CHINESE)
-            val results = geocoder.getFromLocation(coordinate.latitude, coordinate.longitude, 1)
-            val address = results?.firstOrNull() ?: return@runCatching null
-            buildString {
-                address.adminArea?.let { append(it) }
-                address.locality?.takeIf { it != address.adminArea }?.let { append(it) }
-                address.subLocality?.let { append(it) }
-                address.thoroughfare?.let { append(it) }
-                address.featureName?.takeIf { it != address.thoroughfare }?.let { append(it) }
-            }.takeIf { it.isNotBlank() } ?: address.getAddressLine(0)
-        }.getOrNull()
+    override suspend fun getAddress(coordinate: GpsCoordinate): String? {
+        if (!isAvailable()) return null
+        return try {
+            runInterruptible(Dispatchers.IO) {
+                val geocoder = Geocoder(context, Locale.CHINESE)
+                val results = geocoder.getFromLocation(coordinate.latitude, coordinate.longitude, 1)
+                val address = results?.firstOrNull() ?: return@runInterruptible null
+                buildString {
+                    address.adminArea?.let { append(it) }
+                    address.locality?.takeIf { it != address.adminArea }?.let { append(it) }
+                    address.subLocality?.let { append(it) }
+                    address.thoroughfare?.let { append(it) }
+                    address.featureName?.takeIf { it != address.thoroughfare }?.let { append(it) }
+                }.takeIf { it.isNotBlank() } ?: address.getAddressLine(0)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
     }
 
     companion object {

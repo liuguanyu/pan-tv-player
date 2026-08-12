@@ -1,6 +1,7 @@
 package com.baidu.tv.player.kt.location.geocoding
 
 import com.baidu.tv.player.kt.location.GpsCoordinate
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -25,8 +26,8 @@ class NominatimGeocodingStrategy @Inject constructor(
 
     override fun isAvailable(): Boolean = true
 
-    override suspend fun getAddress(coordinate: GpsCoordinate): String? = withContext(Dispatchers.IO) {
-        runCatching {
+    override suspend fun getAddress(coordinate: GpsCoordinate): String? {
+        return try {
             val url = "https://nominatim.openstreetmap.org/reverse" +
                 "?format=json" +
                 "&lat=${coordinate.latitude}" +
@@ -37,13 +38,19 @@ class NominatimGeocodingStrategy @Inject constructor(
                 .header("User-Agent", USER_AGENT)
                 .get()
                 .build()
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@use null
-                val body = response.body?.string() ?: return@use null
-                val json = JSONObject(body)
-                json.optString("display_name").takeIf { it.isNotBlank() }
+            okHttpClient.executeCancellable(request).use { response ->
+                withContext(Dispatchers.IO) {
+                    if (!response.isSuccessful) return@withContext null
+                    val body = response.body?.string() ?: return@withContext null
+                    val json = JSONObject(body)
+                    json.optString("display_name").takeIf { it.isNotBlank() }
+                }
             }
-        }.getOrNull()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
     }
 
     companion object {

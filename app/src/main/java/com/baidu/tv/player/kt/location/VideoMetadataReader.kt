@@ -1,6 +1,12 @@
 package com.baidu.tv.player.kt.location
 
 import android.media.MediaMetadataRetriever
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.runInterruptible
 import javax.inject.Inject
 
 /**
@@ -13,30 +19,32 @@ interface VideoMetadataReader {
      * 从远程视频 URL 读取 ISO6709 位置字符串（[MediaMetadataRetriever.METADATA_KEY_LOCATION]）。
      * 无 metadata 返回 null。异常由调用方处理（此处允许抛出，由上层静默捕获）。
      */
-    fun readLocationString(url: String): String?
+    suspend fun readLocationString(url: String): String?
 
     /**
      * 从远程视频 URL 读取拍摄日期字符串（[MediaMetadataRetriever.METADATA_KEY_DATE]，
      * 通常为 ISO8601，如 "20230815T091530.000Z"）。无 metadata 返回 null。
      */
-    fun readDateString(url: String): String?
+    suspend fun readDateString(url: String): String?
 }
 
 class DefaultVideoMetadataReader @Inject constructor(
     private val quickTimeLocationReader: QuickTimeLocationReader,
 ) : VideoMetadataReader {
 
-    override fun readLocationString(url: String): String? {
-        val platformLocation = try {
-            readMetadata(url, MediaMetadataRetriever.METADATA_KEY_LOCATION)
-        } catch (_: Exception) {
-            null
-        }
-        return platformLocation ?: quickTimeLocationReader.readLocationString(url)
-    }
+    override suspend fun readLocationString(url: String): String? = raceValidLocations(
+        platformProbe = {
+            runInterruptible(Dispatchers.IO) {
+                readMetadata(url, MediaMetadataRetriever.METADATA_KEY_LOCATION)
+            }
+        },
+        quickTimeProbe = { quickTimeLocationReader.readLocationString(url) },
+    )
 
-    override fun readDateString(url: String): String? =
-        readMetadata(url, MediaMetadataRetriever.METADATA_KEY_DATE)
+    override suspend fun readDateString(url: String): String? =
+        runInterruptible(Dispatchers.IO) {
+            readMetadata(url, MediaMetadataRetriever.METADATA_KEY_DATE)
+        }
 
     private fun readMetadata(url: String, key: Int): String? {
         val retriever = MediaMetadataRetriever()
@@ -47,6 +55,37 @@ class DefaultVideoMetadataReader @Inject constructor(
             retriever.extractMetadata(key)
         } finally {
             runCatching { retriever.release() }
+        }
+    }
+
+    companion object {
+        internal suspend fun raceValidLocations(
+            platformProbe: suspend () -> String?,
+            quickTimeProbe: suspend () -> String?,
+        ): String? = coroutineScope {
+            val results = Channel<String?>(capacity = 2)
+            val probes = listOf(platformProbe, quickTimeProbe).map { probe ->
+                async {
+                    val value = try {
+                        probe()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
+                    results.send(value?.takeIf { LocationExtractor.parseIso6709(it) != null })
+                }
+            }
+
+            try {
+                repeat(probes.size) {
+                    results.receive()?.let { return@coroutineScope it }
+                }
+                null
+            } finally {
+                probes.forEach { it.cancel() }
+                results.close()
+            }
         }
     }
 }

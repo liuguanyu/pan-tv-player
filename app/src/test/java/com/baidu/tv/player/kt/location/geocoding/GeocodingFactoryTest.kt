@@ -1,10 +1,15 @@
 package com.baidu.tv.player.kt.location.geocoding
 
 import com.baidu.tv.player.kt.location.GpsCoordinate
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * [GeocodingFactory] 策略选择与回退测试（对应 tasks.md 7.9）。
@@ -48,7 +53,70 @@ class GeocodingFactoryTest {
         val factory = GeocodingFactory(setOf(low, high))
 
         assertEquals("高优先级地址", factory.reverseGeocode(coordinate))
-        assertEquals(false, low.called) // 高优先级已命中，无需回退。
+    }
+
+    @Test
+    fun returnsFirstParallelSuccessAndCancelsSlowerProbe() = runTest {
+        val started = AtomicInteger(0)
+        val allStarted = CompletableDeferred<Unit>()
+        val slowCancelled = CompletableDeferred<Unit>()
+        fun markStarted() {
+            if (started.incrementAndGet() == 2) allStarted.complete(Unit)
+        }
+        val slow = object : GeocodingStrategy {
+            override val name = "slow"
+            override val priority = 1
+            override fun isAvailable() = true
+            override suspend fun getAddress(coordinate: GpsCoordinate): String? {
+                markStarted()
+                try {
+                    awaitCancellation()
+                } finally {
+                    slowCancelled.complete(Unit)
+                }
+            }
+        }
+        val fast = object : GeocodingStrategy {
+            override val name = "fast"
+            override val priority = 2
+            override fun isAvailable() = true
+            override suspend fun getAddress(coordinate: GpsCoordinate): String? {
+                markStarted()
+                allStarted.await()
+                return "并行命中"
+            }
+        }
+
+        assertEquals("并行命中", GeocodingFactory(setOf(slow, fast)).reverseGeocode(coordinate))
+        assertEquals(Unit, slowCancelled.await())
+    }
+
+    @Test
+    fun parentCancellationStopsAllProbes() = runTest {
+        val started = AtomicInteger(0)
+        val allStarted = CompletableDeferred<Unit>()
+        val cancelled = AtomicInteger(0)
+        val strategies = (1..2).map { priority ->
+            object : GeocodingStrategy {
+                override val name = "probe-$priority"
+                override val priority = priority
+                override fun isAvailable() = true
+                override suspend fun getAddress(coordinate: GpsCoordinate): String? {
+                    if (started.incrementAndGet() == 2) allStarted.complete(Unit)
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        cancelled.incrementAndGet()
+                    }
+                }
+            }
+        }.toSet()
+
+        val job = launch { GeocodingFactory(strategies).reverseGeocode(coordinate) }
+        allStarted.await()
+        job.cancelAndJoin()
+
+        assertEquals(2, cancelled.get())
     }
 
     @Test

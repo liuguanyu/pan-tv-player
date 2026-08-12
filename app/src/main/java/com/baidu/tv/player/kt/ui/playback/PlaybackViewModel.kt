@@ -10,6 +10,7 @@ import com.baidu.tv.player.kt.model.PlayMode
 import com.baidu.tv.player.kt.repository.PlaybackHistoryRepository
 import com.baidu.tv.player.kt.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -310,6 +311,8 @@ class PlaybackViewModel @Inject constructor(
     private fun switchToIndex(index: Int) {
         val files = _uiState.value.files
         if (index !in files.indices) return
+        locationJob?.cancel()
+        locationJob = null
         _uiState.update {
             it.copy(
                 currentIndex = index,
@@ -319,6 +322,8 @@ class PlaybackViewModel @Inject constructor(
                 durationMs = 0L,
                 isLoading = true,
                 errorMessage = null,
+                locationText = null,
+                captureTimeText = null,
                 // 切换到新媒体：首帧尚未渲染，先隐藏三个角信息并停止计时，待就绪回调再置 true。
                 contentReady = false,
             )
@@ -369,20 +374,32 @@ class PlaybackViewModel @Inject constructor(
             // 地点：受"显示地点"设置控制。
             launch {
                 if (!_uiState.value.showLocation) return@launch
-                val location = runCatching {
+                val location = try {
                     locationExtractionService.extractLocation(url, isVideo)
-                }.getOrNull()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
                 if (location != null) {
-                    _uiState.update { it.copy(locationText = location) }
+                    _uiState.update {
+                        if (it.preparedUrl == url) it.copy(locationText = location) else it
+                    }
                 }
             }
             // 拍摄时间：独立于地点，能取到即显示（与地点并行提取，互不阻塞）。
             launch {
-                val time = runCatching {
+                val time = try {
                     locationExtractionService.extractCaptureTime(url, isVideo)
-                }.getOrNull()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
                 if (!time.isNullOrBlank()) {
-                    _uiState.update { it.copy(captureTimeText = time) }
+                    _uiState.update {
+                        if (it.preparedUrl == url) it.copy(captureTimeText = time) else it
+                    }
                 }
             }
         }

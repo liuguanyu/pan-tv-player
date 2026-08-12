@@ -2,14 +2,20 @@ package com.baidu.tv.player.kt.location.geocoding
 
 import android.util.Log
 import com.baidu.tv.player.kt.location.GpsCoordinate
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * 逆地理编码工厂（对应 tasks.md 7.8，迁移自 Java 版 GeocodingFactory）。
  *
- * 统一入口：注入全部 [GeocodingStrategy]，按 [GeocodingStrategy.priority] 升序（优先级高→低）排序，
- * 逐个尝试"可用且能返回结果"的策略；任一成功即返回，全部失败返回 null（静默回退）。
+ * 统一入口：注入全部 [GeocodingStrategy]，并行尝试所有可用策略；任一成功即返回并取消其余探测，
+ * 全部失败返回 null（静默回退）。优先级排序仅保留作稳定展示和诊断。
  *
  * 策略集合由 [com.baidu.tv.player.kt.di.GeocodingModule] 通过 Multibinding 提供，
  * 避免任何手动 getInstance 单例。
@@ -24,21 +30,43 @@ class GeocodingFactory @Inject constructor(
         strategies.sortedBy { it.priority }
 
     /**
-     * 逆地理编码：按优先级尝试所有可用策略，返回首个非空地址；全部失败返回 null。
+     * 并行逆地理编码：返回首个非空地址，并取消其余探测；调用方取消时全部子任务一并取消。
      */
-    suspend fun reverseGeocode(coordinate: GpsCoordinate): String? {
-        if (!coordinate.isValid()) return null
-        for (strategy in orderedStrategies) {
-            if (!strategy.isAvailable()) continue
-            val address = runCatching { strategy.getAddress(coordinate) }
-                .onFailure { Log.w(TAG, "策略 ${strategy.name} 逆地理编码异常，回退", it) }
-                .getOrNull()
-            if (!address.isNullOrBlank()) {
-                Log.d(TAG, "逆地理编码成功，策略=${strategy.name}")
-                return address
+    suspend fun reverseGeocode(coordinate: GpsCoordinate): String? = coroutineScope {
+        if (!coordinate.isValid()) return@coroutineScope null
+        val availableStrategies = orderedStrategies.filter { it.isAvailable() }
+        if (availableStrategies.isEmpty()) return@coroutineScope null
+
+        val results = Channel<Pair<GeocodingStrategy, String?>>(availableStrategies.size)
+        val jobs = availableStrategies.map { strategy ->
+            launch {
+                val address = try {
+                    strategy.getAddress(coordinate)
+                } catch (e: CancellationException) {
+                    currentCoroutineContext().ensureActive()
+                    Log.w(TAG, "策略 ${strategy.name} 主动取消，按失败处理", e)
+                    null
+                } catch (e: Exception) {
+                    Log.w(TAG, "策略 ${strategy.name} 逆地理编码异常", e)
+                    null
+                }
+                results.send(strategy to address)
             }
         }
-        return null
+
+        try {
+            repeat(availableStrategies.size) {
+                val (strategy, address) = results.receive()
+                if (!address.isNullOrBlank()) {
+                    Log.d(TAG, "逆地理编码成功，策略=${strategy.name}")
+                    return@coroutineScope address
+                }
+            }
+            null
+        } finally {
+            jobs.forEach { it.cancel() }
+            results.close()
+        }
     }
 
     /** 暴露当前按优先级排序后的策略名称，便于测试/诊断。 */
