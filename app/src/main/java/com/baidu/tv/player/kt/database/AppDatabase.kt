@@ -21,7 +21,7 @@ import com.baidu.tv.player.kt.model.PlaylistItem
 @Database(
     entities = [PlaybackHistory::class, Playlist::class, PlaylistItem::class],
     version = 5,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun playbackHistoryDao(): PlaybackHistoryDao

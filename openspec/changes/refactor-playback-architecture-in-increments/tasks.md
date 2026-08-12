@@ -18,11 +18,11 @@
 
 ## 3. 建立 Room Migration 安全网
 
-- [ ] 3.1 配置 Room schema export 并将现有 schema JSON 纳入版本控制
-- [ ] 3.2 使用 MigrationTestHelper 构造包含重复路径、相同时间和非重复记录的 v4 数据库
-- [ ] 3.3 验证 MIGRATION_4_5 保留最新记录、创建唯一索引并通过 Room schema validation
-- [ ] 3.4 补充空数据库、中文/空格/引号路径和迁移后重复插入测试
-- [ ] 3.5 运行 JVM、androidTest 编译、可用设备上的 migration test 和 release 构建门禁
+- [x] 3.1 配置 Room schema export 并将现有 schema JSON 纳入版本控制
+- [x] 3.2 使用 MigrationTestHelper 构造包含重复路径、相同时间和非重复记录的 v4 数据库
+- [x] 3.3 验证 MIGRATION_4_5 保留最新记录、创建唯一索引并通过 Room schema validation
+- [x] 3.4 补充空数据库、中文/空格/引号路径和迁移后重复插入测试
+- [x] 3.5 运行 JVM、androidTest 编译、可用设备上的 migration test 和 release 构建门禁
 
 ## 4. 统一百度可播放 URL 解析
 

@@ -138,6 +138,11 @@ android {
     }
 }
 
+ksp {
+    arg("room.schemaLocation", project.file("schemas").absolutePath)
+    arg("room.incremental", "true")
+}
+
 dependencies {
     // AndroidX basics
     implementation(libs.androidx.core.ktx)
