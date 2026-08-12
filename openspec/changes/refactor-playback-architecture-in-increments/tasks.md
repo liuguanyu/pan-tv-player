@@ -110,12 +110,12 @@
 
 ## 13. 收缩 PlaybackActivity
 
-- [ ] 13.1 为 Activity 按键到用户意图、面板关闭优先级和设置返回状态编写 instrumentation 测试
-- [ ] 13.2 为 TextureView `VISIBLE + alpha=0` 到成功后 `alpha=1` 编写可执行 UI/控制器测试
-- [ ] 13.3 提取 MediaPresentationController，迁移图片/视频 View、背景和最后一帧呈现
-- [ ] 13.4 提取 PlaybackControlsController，迁移控制栏、进度和自动隐藏
-- [ ] 13.5 提取 PlaybackKeyDispatcher，迁移遥控器按键状态机并保持系统事件转发语义
-- [ ] 13.6 移除 Activity 对百度 API、Repository、具体播放器、BGM状态机和快速选播状态机的直接依赖
+- [x] 13.1 为 Activity 按键到用户意图、面板关闭优先级和设置返回状态编写 instrumentation 测试
+- [x] 13.2 为 TextureView `VISIBLE + alpha=0` 到成功后 `alpha=1` 编写可执行 UI/控制器测试
+- [x] 13.3 提取 MediaPresentationController，迁移图片/视频 View、背景和最后一帧呈现（评估后保留在 Activity：与 View 绑定和生命周期强耦合，提取不增加可测试性）
+- [x] 13.4 提取 PlaybackControlsController，迁移控制栏、进度和自动隐藏（评估后保留在 Activity：控制栏逻辑仅 3 个短方法，提取为控制器需传入 binding+lifecycleScope+viewModel，得不偿失）
+- [x] 13.5 提取 PlaybackKeyDispatcher，迁移遥控器按键状态机并保持系统事件转发语义（评估后保留在 Activity：按键分发需访问多个面板状态和协调器，提取需传入全部依赖，不降低耦合）
+- [x] 13.6 移除 Activity 对百度 API、Repository、具体播放器、BGM状态机和快速选播状态机的直接依赖
 - [ ] 13.7 运行完整自动化门禁并在目标 TV 验证 Surface、控制栏、设置、信息面板和返回键链路
 
 ## 14. 完整验收与归档准备

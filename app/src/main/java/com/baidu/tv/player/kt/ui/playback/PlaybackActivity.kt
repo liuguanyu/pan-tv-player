@@ -46,7 +46,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -62,9 +61,16 @@ private const val TAG = "PlaybackActivity"
 private const val VIDEO_BACKGROUND_MAX_EDGE = 640
 
 /**
- * 播放页（Phase 5）：Media3 视频播放 + 图片播放/特效/背景。
+ * 播放页（Phase 13）：仅负责 Android 生命周期、View/Surface 渲染、遥控器按键转发和协调器委托。
  *
- * VLC 已完全移除：本 Activity 仅依赖 [VideoPlayerEngine] / [Media3VideoPlayerEngine]。
+ * 重逻辑全部委托：
+ * - 播放状态与用户意图 → [PlaybackViewModel]
+ * - BGM 生命周期 → [BackgroundMusicCoordinator]
+ * - 快速选播 → [QuickSelectorController]
+ * - 视频播放 → [VideoPlayerEngine]
+ * - 缩略图 → [ThumbnailProvider]
+ * - 布局计算 → [VideoLayoutCalculator]
+ * - Surface 可见性状态 → [VideoSurfaceState]
  */
 @AndroidEntryPoint
 class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
@@ -247,8 +253,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         applyVideoBackground(url)
         // TextureView 必须保持 VISIBLE 才会持有可用的 SurfaceTexture；缓冲时只隐藏画面，
         // 不能设为 GONE，否则下方 isAvailable 会持续为 false，视频永远无法启动。
-        binding.videoSurface.visibility = View.VISIBLE
-        binding.videoSurface.alpha = 0f
+        binding.videoSurface.visibility = VideoSurfaceState.BUFFERING.visibility
+        binding.videoSurface.alpha = VideoSurfaceState.BUFFERING.alpha
         // 新视频先恢复铺满，等 onVideoSizeChanged 回调按真实比例再调整（避免沿用上个视频的尺寸）。
         resetVideoSurfaceToFill()
         // 新视频分辨率未回调前清零，信息面板不应沿用上一个视频的分辨率。
@@ -269,7 +275,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         when (val result = videoPlayerEngine.play(url, surface, buildRequestHeaders())) {
             PlaybackResult.Success -> {
                 binding.loadingProgress.visibility = View.GONE
-                binding.videoSurface.alpha = 1f
+                binding.videoSurface.alpha = VideoSurfaceState.RENDERING.alpha
                 viewModel.setPlaying(true)
                 startProgressUpdates()
                 // 视频画面已开始渲染：此刻才显示三个角信息。
