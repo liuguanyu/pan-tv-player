@@ -36,6 +36,7 @@ class GeocodingFactory @Inject constructor(
         if (!coordinate.isValid()) return@coroutineScope null
         val availableStrategies = orderedStrategies.filter { it.isAvailable() }
         if (availableStrategies.isEmpty()) return@coroutineScope null
+        Log.d(TAG, "启动并行逆地理编码: ${availableStrategies.joinToString { it.name }}")
 
         val results = Channel<Pair<GeocodingStrategy, String?>>(availableStrategies.size)
         val jobs = availableStrategies.map { strategy ->
@@ -57,11 +58,14 @@ class GeocodingFactory @Inject constructor(
         try {
             repeat(availableStrategies.size) {
                 val (strategy, address) = results.receive()
-                if (!address.isNullOrBlank()) {
+                if (address.isNullOrBlank()) {
+                    Log.d(TAG, "逆地理编码无结果，策略=${strategy.name}")
+                } else {
                     Log.d(TAG, "逆地理编码成功，策略=${strategy.name}")
                     return@coroutineScope address
                 }
             }
+            Log.d(TAG, "全部逆地理编码策略均无结果")
             null
         } finally {
             jobs.forEach { it.cancel() }

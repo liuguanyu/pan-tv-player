@@ -1,5 +1,6 @@
 package com.baidu.tv.player.kt.ui.playback
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.baidu.tv.player.kt.location.LocationExtractionService
@@ -25,6 +26,7 @@ import javax.inject.Inject
 
 private const val DEFAULT_IMAGE_DISPLAY_MS = 8_000L
 private const val DEFAULT_TRANSITION_MS = 1_000L
+private const val TAG = "PlaybackViewModel"
 
 /** 播放页 UI 状态。 */
 data class PlaybackUiState(
@@ -311,6 +313,9 @@ class PlaybackViewModel @Inject constructor(
     private fun switchToIndex(index: Int) {
         val files = _uiState.value.files
         if (index !in files.indices) return
+        if (locationJob?.isActive == true) {
+            Log.d(TAG, "切换播放项，取消上一媒体的位置与拍摄时间探测")
+        }
         locationJob?.cancel()
         locationJob = null
         _uiState.update {
@@ -367,7 +372,11 @@ class PlaybackViewModel @Inject constructor(
      * 切换文件时取消上一个提取任务并先清空旧地点；失败静默（locationText 保持 null）。
      */
     private fun extractLocationFor(url: String, isVideo: Boolean) {
+        if (locationJob?.isActive == true) {
+            Log.d(TAG, "新媒体已就绪，取消上一媒体探测")
+        }
         locationJob?.cancel()
+        Log.d(TAG, "启动媒体信息探测，类型=${if (isVideo) "video" else "image"}")
         // 切换文件先清空旧的地点与拍摄时间，避免残留上一媒体信息。
         _uiState.update { it.copy(locationText = null, captureTimeText = null) }
         locationJob = viewModelScope.launch {

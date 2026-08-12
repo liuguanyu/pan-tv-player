@@ -1,5 +1,6 @@
 package com.baidu.tv.player.kt.location
 
+import android.util.Log
 import com.baidu.tv.player.kt.location.geocoding.executeCancellable
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -28,20 +29,29 @@ class QuickTimeLocationReader @Inject constructor(
     }.build()
 
     suspend fun readLocationString(url: String): String? {
+        Log.d(TAG, "开始 QuickTime Range 定位探测")
         val source = HttpRangeSource(rangeClient, url)
-        val fileSize = source.fileSize() ?: return null
-        val moov = findChild(source, 0L, fileSize, TYPE_MOOV) ?: return null
+        val fileSize = source.fileSize() ?: return null.also { Log.d(TAG, "无法获取媒体大小") }
+        val moov = findChild(source, 0L, fileSize, TYPE_MOOV)
+            ?: return null.also { Log.d(TAG, "未找到 moov atom") }
 
         findMeta(source, moov)?.let { meta ->
             parseMdtaLocation(source.readAtomBytes(meta, MAX_METADATA_ATOM_BYTES) ?: return@let null)
-                ?.let { return it }
+                ?.let {
+                    Log.d(TAG, "命中 Apple ISO6709 metadata")
+                    return it
+                }
         }
 
         // 兼容旧 QuickTime ©xyz UserData atom；官方 Android key 也以此为标准来源。
         findDescendant(source, moov, TYPE_UDTA, TYPE_XYZ)?.let { xyz ->
             parseLegacyXyz(source.readAtomBytes(xyz, MAX_LEGACY_ATOM_BYTES) ?: return@let null)
-                ?.let { return it }
+                ?.let {
+                    Log.d(TAG, "命中 legacy ©xyz metadata")
+                    return it
+                }
         }
+        Log.d(TAG, "QuickTime metadata 中未发现有效位置")
         return null
     }
 
@@ -212,6 +222,7 @@ class QuickTimeLocationReader @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "QuickTimeLocation"
         private const val APPLE_LOCATION_KEY = "com.apple.quicktime.location.ISO6709"
         private const val TYPE_MOOV = "moov"
         private const val TYPE_META = "meta"

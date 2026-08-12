@@ -1,6 +1,7 @@
 package com.baidu.tv.player.kt.location
 
 import android.media.MediaMetadataRetriever
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -32,14 +33,17 @@ class DefaultVideoMetadataReader @Inject constructor(
     private val quickTimeLocationReader: QuickTimeLocationReader,
 ) : VideoMetadataReader {
 
-    override suspend fun readLocationString(url: String): String? = raceValidLocations(
+    override suspend fun readLocationString(url: String): String? {
+        Log.d(TAG, "启动 Android metadata 与 QuickTime metadata 并行探测")
+        return raceValidLocations(
         platformProbe = {
             runInterruptible(Dispatchers.IO) {
                 readMetadata(url, MediaMetadataRetriever.METADATA_KEY_LOCATION)
             }
         },
-        quickTimeProbe = { quickTimeLocationReader.readLocationString(url) },
-    )
+            quickTimeProbe = { quickTimeLocationReader.readLocationString(url) },
+        )
+    }
 
     override suspend fun readDateString(url: String): String? =
         runInterruptible(Dispatchers.IO) {
@@ -59,12 +63,17 @@ class DefaultVideoMetadataReader @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "VideoMetadataReader"
+
         internal suspend fun raceValidLocations(
             platformProbe: suspend () -> String?,
             quickTimeProbe: suspend () -> String?,
         ): String? = coroutineScope {
             val results = Channel<String?>(capacity = 2)
-            val probes = listOf(platformProbe, quickTimeProbe).map { probe ->
+            val probes = listOf(
+                "AndroidMetadata" to platformProbe,
+                "QuickTimeMetadata" to quickTimeProbe,
+            ).map { (name, probe) ->
                 async {
                     val value = try {
                         probe()
@@ -73,7 +82,13 @@ class DefaultVideoMetadataReader @Inject constructor(
                     } catch (_: Exception) {
                         null
                     }
-                    results.send(value?.takeIf { LocationExtractor.parseIso6709(it) != null })
+                    val validValue = value?.takeIf { LocationExtractor.parseIso6709(it) != null }
+                    when {
+                        validValue != null -> Log.d(TAG, "视频位置探测命中，来源=$name")
+                        value != null -> Log.d(TAG, "视频位置 metadata 不可解析，来源=$name")
+                        else -> Log.d(TAG, "视频位置探测无结果，来源=$name")
+                    }
+                    results.send(validValue)
                 }
             }
 
