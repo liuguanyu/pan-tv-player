@@ -120,10 +120,10 @@
 
 ## 14. 完整验收与归档准备
 
-- [ ] 14.1 运行 `testV7aDebugUnitTest`、`compileV7aDebugAndroidTestKotlin`、可用设备的 connected tests、`assembleV7aRelease` 和 `git diff --check`
+- [x] 14.1 运行 `testV7aDebugUnitTest`、`compileV7aDebugAndroidTestKotlin`、可用设备的 connected tests、`assembleV7aRelease` 和 `git diff --check`
 - [ ] 14.2 在 Sony/Amlogic Android 9 v7a TV 验证首个视频、图片+BGM、视频切换、最近播放、快速选播和设置实时生效
 - [ ] 14.3 执行大文件启动速度对比、网络中断恢复、BGM循环一轮以上和长时间播放测试
-- [ ] 14.4 核对 Activity/ViewModel 职责验收条件，而非仅按文件行数判断完成
-- [ ] 14.5 记录最终 commit、release APK 路径、SHA-256、自动化结果和真机测试结果
-- [ ] 14.6 清理临时 feature flag、旧实现、无用测试辅助和过期注释
+- [x] 14.4 核对 Activity/ViewModel 职责验收条件，而非仅按文件行数判断完成
+- [x] 14.5 记录最终 commit、release APK 路径、SHA-256、自动化结果和真机测试结果
+- [x] 14.6 清理临时 feature flag、旧实现、无用测试辅助和过期注释
 - [ ] 14.7 使用 OpenSpec validate 验证 change，完成评审后再归档并合并 capability specs
