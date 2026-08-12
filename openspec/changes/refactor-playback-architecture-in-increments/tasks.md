@@ -101,12 +101,12 @@
 
 ## 12. 收缩 PlaybackViewModel
 
-- [ ] 12.1 使用 Fake SessionFactory、Navigator、Preparation、History和Metadata边界重写 ViewModel 状态转换测试
-- [ ] 12.2 覆盖 Idle→Loading→Ready/Failed、A→B切换、retry、contentReady和清理取消
-- [ ] 12.3 提取媒体元数据协调和图片自动切换计时，使其可使用 TestDispatcher 独立测试
-- [ ] 12.4 将 PlaybackViewModel 收口为 PlaybackUiState、用户意图和协调器编排
-- [ ] 12.5 删除 Room实体组装、URL拼接、队列算法、播放器实现和独立计时细节
-- [ ] 12.6 运行完整自动化门禁并比较 ViewModel 公共行为与阶段 1 基线
+- [x] 12.1 使用 Fake SessionFactory、Navigator、Preparation、History和Metadata边界重写 ViewModel 状态转换测试
+- [x] 12.2 覆盖 Idle→Loading→Ready/Failed、A→B切换、retry、contentReady和清理取消
+- [x] 12.3 提取媒体元数据协调和图片自动切换计时，使其可使用 TestDispatcher 独立测试
+- [x] 12.4 将 PlaybackViewModel 收口为 PlaybackUiState、用户意图和协调器编排
+- [x] 12.5 删除 Room实体组装、URL拼接、队列算法、播放器实现和独立计时细节
+- [x] 12.6 运行完整自动化门禁并比较 ViewModel 公共行为与阶段 1 基线
 
 ## 13. 收缩 PlaybackActivity
 

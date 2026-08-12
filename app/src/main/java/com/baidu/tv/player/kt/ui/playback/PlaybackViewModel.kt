@@ -76,12 +76,18 @@ sealed interface PlaybackUiEvent {
 }
 
 /**
- * 播放页 ViewModel（对应 tasks 6.7）。
+ * 播放页 ViewModel（Phase 12：纯编排）。
  *
- * - 通过 [PlaylistCache] 接收文件浏览页传入的临时播放列表。
- * - [prepareAndEmitCurrent] 获取/复用 dlink，并拼接 access_token 生成播放 URL。
- * - [preloadNextFile] 使用 [preloadMutex] 保证下一首 dlink 预加载不会并发重复请求。
- * - 播放历史通过 [PlaybackHistoryRepository.insert] upsert 落库。
+ * 职责仅限：
+ * - 持有 [PlaybackUiState] 与 [PlaybackUiEvent]。
+ * - 接收用户意图并委托协调器执行。
+ * - 订阅设置流并同步到 UiState。
+ *
+ * 重逻辑委托：
+ * - 会话构建 → [PlaybackSessionFactory]
+ * - 队列导航 → [PlaybackQueueNavigator]
+ * - URL 解析 / 预加载 / generation 并发 → [MediaPreparationCoordinator]
+ * - 历史映射 / 写入降级 → [PlaybackHistoryRecorder]（由 Coordinator 调用）
  */
 @HiltViewModel
 class PlaybackViewModel @Inject constructor(
@@ -392,13 +398,6 @@ class PlaybackViewModel @Inject constructor(
         }
     }
 
-    /**
-     * 由 UI 层在媒体首帧真正渲染完成后调用（图片 Glide 加载完成 / 视频播放成功）。
-     * 置 [PlaybackUiState.contentReady] 为 true，从而显示三个角的辅助信息；
-     * 若当前是图片，则此刻才开始自动切换计时。
-     *
-     * 幂等：重复调用不会重复启动图片计时。
-     */
     /** 播放页成功渲染后，将本地截图写回当前历史记录。 */
     fun updateHistoryCover(filePath: String, coverPath: String) {
         if (filePath.isBlank()) return
@@ -407,6 +406,13 @@ class PlaybackViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 由 UI 层在媒体首帧真正渲染完成后调用（图片 Glide 加载完成 / 视频播放成功）。
+     * 置 [PlaybackUiState.contentReady] 为 true，从而显示三个角的辅助信息；
+     * 若当前是图片，则此刻才开始自动切换计时。
+     *
+     * 幂等：重复调用不会重复启动图片计时。
+     */
     fun notifyContentReady() {
         if (_uiState.value.contentReady) return
         _uiState.update { it.copy(contentReady = true) }
