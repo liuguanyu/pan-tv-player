@@ -60,10 +60,10 @@ class LocationExtractor @Inject constructor(
     /**
      * 提取视频 GPS。MediaMetadataRetriever + withTimeout(8000)；超时/异常/无 metadata 静默 null。
      */
-    suspend fun extractVideoGps(url: String): GpsCoordinate? = withContext(Dispatchers.IO) {
+    suspend fun extractVideoGps(url: String, fileNameHint: String? = null): GpsCoordinate? = withContext(Dispatchers.IO) {
         try {
             withTimeout(VIDEO_TIMEOUT_MS) {
-                val iso6709 = videoMetadataReader.readLocationString(url) ?: return@withTimeout null
+                val iso6709 = videoMetadataReader.readLocationString(url, fileNameHint) ?: return@withTimeout null
                 parseIso6709(iso6709)
             }
         } catch (e: TimeoutCancellationException) {

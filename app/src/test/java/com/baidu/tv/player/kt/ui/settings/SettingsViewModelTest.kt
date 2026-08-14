@@ -3,6 +3,7 @@ package com.baidu.tv.player.kt.ui.settings
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.test
+import com.baidu.tv.player.kt.auth.BaiduAuthService
 import com.baidu.tv.player.kt.location.LocationExtractionService
 import com.baidu.tv.player.kt.model.ImageEffect
 import com.baidu.tv.player.kt.model.PlayMode
@@ -11,6 +12,7 @@ import com.baidu.tv.player.kt.ui.playback.image.ImageBackgroundMode
 import com.baidu.tv.player.kt.util.MainCoroutineRule
 import io.mockk.coEvery
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -37,6 +39,7 @@ class SettingsViewModelTest {
 
     private lateinit var repository: SettingsRepository
     private lateinit var locationService: LocationExtractionService
+    private lateinit var authService: BaiduAuthService
 
     @Before
     fun setUp() {
@@ -46,9 +49,17 @@ class SettingsViewModelTest {
         val prefs = context.getSharedPreferences(SettingsRepository.PREF_NAME, Context.MODE_PRIVATE)
         repository = SettingsRepository(prefs)
         locationService = mockk(relaxed = true)
+        authService = mockk(relaxed = true)
     }
 
-    private fun newViewModel() = SettingsViewModel(repository, locationService)
+    private fun newViewModel() = SettingsViewModel(repository, locationService, authService)
+
+    @Test
+    fun logout_clearsAuthentication() {
+        newViewModel().logout()
+
+        verify(exactly = 1) { authService.logout() }
+    }
 
     @Test
     fun uiState_reflectsRepositoryDefaults() = runTest {
@@ -94,7 +105,7 @@ class SettingsViewModelTest {
 
     @Test
     fun testLocationExtraction_emitsResultEvent() = runTest {
-        coEvery { locationService.extractLocation(any(), any()) } returns "北京市"
+        coEvery { locationService.extractLocation(any(), any(), any()) } returns "北京市"
         val vm = newViewModel()
         vm.events.test {
             vm.testLocationExtraction("http://example.com/p.jpg", isVideo = false)
@@ -106,7 +117,7 @@ class SettingsViewModelTest {
 
     @Test
     fun testLocationExtraction_nullResultStillEmits() = runTest {
-        coEvery { locationService.extractLocation(any(), any()) } returns null
+        coEvery { locationService.extractLocation(any(), any(), any()) } returns null
         val vm = newViewModel()
         vm.events.test {
             vm.testLocationExtraction("http://example.com/p.jpg", isVideo = true)

@@ -166,6 +166,18 @@
                 tools:text="开启" />
         </LinearLayout>
 
+        <!-- 退出账号 -->
+        <LinearLayout
+            android:id="@+id/rowLogout"
+            style="@style/SettingsRow"
+            android:layout_marginTop="24dp"
+            android:focusable="true">
+
+            <TextView
+                style="@style/SettingsRowLabel"
+                android:text="@string/settings_logout" />
+        </LinearLayout>
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

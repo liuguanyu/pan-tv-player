@@ -109,6 +109,7 @@ class PlaybackViewModel @Inject constructor(
     val events: SharedFlow<PlaybackUiEvent> = _events.asSharedFlow()
 
     private var locationJob: Job? = null
+    private var captureTimeJob: Job? = null
     private var imageAutoNextJob: Job? = null
 
     init {
@@ -149,6 +150,17 @@ class PlaybackViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.showLocation.collect { enabled ->
                 _uiState.update { it.copy(showLocation = enabled) }
+                if (!enabled) {
+                    locationJob?.cancel()
+                    locationJob = null
+                    _uiState.update { it.copy(locationText = null) }
+                } else {
+                    val state = _uiState.value
+                    val file = state.currentFile
+                    if (!state.preparedUrl.isNullOrBlank() && file != null) {
+                        startLocationProbe(state.preparedUrl!!, file.isVideo(), file.serverFilename)
+                    }
+                }
             }
         }
         viewModelScope.launch {
@@ -313,11 +325,13 @@ class PlaybackViewModel @Inject constructor(
     private fun switchToIndex(index: Int) {
         val files = _uiState.value.files
         if (index !in files.indices) return
-        if (locationJob?.isActive == true) {
+        if (locationJob?.isActive == true || captureTimeJob?.isActive == true) {
             Log.d(TAG, "切换播放项，取消上一媒体的位置与拍摄时间探测")
         }
         locationJob?.cancel()
         locationJob = null
+        captureTimeJob?.cancel()
+        captureTimeJob = null
         _uiState.update {
             it.copy(
                 currentIndex = index,
@@ -351,10 +365,10 @@ class PlaybackViewModel @Inject constructor(
         _uiState.update { it.copy(preparedUrl = url, isLoading = false, isPlaying = true) }
         if (file.isVideo()) {
             _events.emit(PlaybackUiEvent.PlayVideo(url, file))
-            extractLocationFor(url, isVideo = true)
+            extractLocationFor(url, isVideo = true, fileNameHint = file.serverFilename)
         } else if (file.isImage()) {
             _events.emit(PlaybackUiEvent.ShowImage(url, file))
-            extractLocationFor(url, isVideo = false)
+            extractLocationFor(url, isVideo = false, fileNameHint = file.serverFilename)
             // 图片自动切换计时改由 notifyContentReady()（图片真正渲染后）启动，此处不再预启。
         } else {
             _events.emit(PlaybackUiEvent.ShowError("不支持的文件类型: ${file.serverFilename.orEmpty()}"))
@@ -371,44 +385,49 @@ class PlaybackViewModel @Inject constructor(
      * 异步提取当前媒体拍摄地点（EXIF GPS → 逆地理编码），结果写入 uiState.locationText。
      * 切换文件时取消上一个提取任务并先清空旧地点；失败静默（locationText 保持 null）。
      */
-    private fun extractLocationFor(url: String, isVideo: Boolean) {
-        if (locationJob?.isActive == true) {
+    private fun extractLocationFor(url: String, isVideo: Boolean, fileNameHint: String?) {
+        if (locationJob?.isActive == true || captureTimeJob?.isActive == true) {
             Log.d(TAG, "新媒体已就绪，取消上一媒体探测")
         }
         locationJob?.cancel()
-        Log.d(TAG, "启动媒体信息探测，类型=${if (isVideo) "video" else "image"}")
+        captureTimeJob?.cancel()
+        Log.d(TAG, "启动媒体信息探测，类型=${if (isVideo) "video" else "image"}，显示地址=${_uiState.value.showLocation}")
         // 切换文件先清空旧的地点与拍摄时间，避免残留上一媒体信息。
         _uiState.update { it.copy(locationText = null, captureTimeText = null) }
-        locationJob = viewModelScope.launch {
-            // 地点：受"显示地点"设置控制。
-            launch {
-                if (!_uiState.value.showLocation) return@launch
-                val location = try {
-                    locationExtractionService.extractLocation(url, isVideo)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    null
-                }
-                if (location != null) {
-                    _uiState.update {
-                        if (it.preparedUrl == url) it.copy(locationText = location) else it
-                    }
+        if (_uiState.value.showLocation) {
+            startLocationProbe(url, isVideo, fileNameHint)
+        }
+        // 拍摄时间独立于地点开关，保持原有行为。
+        captureTimeJob = viewModelScope.launch {
+            val time = try {
+                locationExtractionService.extractCaptureTime(url, isVideo, fileNameHint)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            if (!time.isNullOrBlank()) {
+                _uiState.update {
+                    if (it.preparedUrl == url) it.copy(captureTimeText = time) else it
                 }
             }
-            // 拍摄时间：独立于地点，能取到即显示（与地点并行提取，互不阻塞）。
-            launch {
-                val time = try {
-                    locationExtractionService.extractCaptureTime(url, isVideo)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    null
-                }
-                if (!time.isNullOrBlank()) {
-                    _uiState.update {
-                        if (it.preparedUrl == url) it.copy(captureTimeText = time) else it
-                    }
+        }
+    }
+
+    private fun startLocationProbe(url: String, isVideo: Boolean, fileNameHint: String?) {
+        locationJob?.cancel()
+        Log.d(TAG, "启动地址解析，类型=${if (isVideo) "video" else "image"}")
+        locationJob = viewModelScope.launch {
+            val location = try {
+                locationExtractionService.extractLocation(url, isVideo, fileNameHint)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            if (location != null) {
+                _uiState.update {
+                    if (it.preparedUrl == url && it.showLocation) it.copy(locationText = location) else it
                 }
             }
         }

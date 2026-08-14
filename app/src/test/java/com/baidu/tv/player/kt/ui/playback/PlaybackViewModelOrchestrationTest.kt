@@ -80,8 +80,8 @@ class PlaybackViewModelOrchestrationTest {
         every { settingsRepository.showLocation } returns MutableStateFlow(true)
         every { settingsRepository.showCounter } returns MutableStateFlow(true)
         every { settingsRepository.showCaptureTime } returns MutableStateFlow(true)
-        coEvery { locationExtractionService.extractLocation(any(), any()) } returns null
-        coEvery { locationExtractionService.extractCaptureTime(any(), any()) } returns null
+        coEvery { locationExtractionService.extractLocation(any(), any(), any()) } returns null
+        coEvery { locationExtractionService.extractCaptureTime(any(), any(), any()) } returns null
 
         // 捕获 prepare 调用的参数
         every { preparationCoordinator.nextGeneration() } answers { prepareGeneration++ }

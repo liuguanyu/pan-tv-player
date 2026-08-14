@@ -70,8 +70,8 @@ class PlaybackViewModelTest {
         every { settingsRepository.showLocation } returns MutableStateFlow(true)
         every { settingsRepository.showCounter } returns MutableStateFlow(true)
         every { settingsRepository.showCaptureTime } returns MutableStateFlow(true)
-        coEvery { locationExtractionService.extractLocation(any(), any()) } returns null
-        coEvery { locationExtractionService.extractCaptureTime(any(), any()) } returns null
+        coEvery { locationExtractionService.extractLocation(any(), any(), any()) } returns null
+        coEvery { locationExtractionService.extractCaptureTime(any(), any(), any()) } returns null
         every { authService.getAccessToken() } returns "token"
         coEvery { historyRepository.insert(any()) } returns Unit
     }
@@ -109,7 +109,7 @@ class PlaybackViewModelTest {
         playlistCache.put("p", files)
         val firstStarted = CompletableDeferred<Unit>()
         val firstCancelled = CompletableDeferred<Unit>()
-        coEvery { locationExtractionService.extractLocation(any(), true) } coAnswers {
+        coEvery { locationExtractionService.extractLocation(any(), true, any()) } coAnswers {
             val url = firstArg<String>()
             if (url.contains("/a")) {
                 firstStarted.complete(Unit)

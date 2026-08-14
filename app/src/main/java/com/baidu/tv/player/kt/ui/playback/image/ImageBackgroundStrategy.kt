@@ -3,7 +3,7 @@ package com.baidu.tv.player.kt.ui.playback.image
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
-import android.graphics.drawable.Drawable
+
 import android.view.View
 import android.widget.ImageView
 import androidx.core.graphics.ColorUtils
@@ -65,14 +65,16 @@ data object BlurBackgroundStrategy : ImageBackgroundStrategy {
     override val mode: ImageBackgroundMode = ImageBackgroundMode.BLUR
 
     override suspend fun apply(backgroundView: ImageView, source: Bitmap?) {
-        val drawable = source?.let { bitmap ->
+        val blurredBitmap = source?.let { bitmap ->
             withContext(Dispatchers.Default) {
-                runCatching { BitmapDrawableCompat(createFastBlur(bitmap)) }.getOrNull()
+                runCatching { createFastBlur(bitmap) }.getOrNull()
             }
         }
-        if (drawable != null) {
+        if (blurredBitmap != null) {
             backgroundView.scaleType = ImageView.ScaleType.CENTER_CROP
-            backgroundView.setImageDrawable(drawable)
+            backgroundView.setBackgroundColor(Color.TRANSPARENT)
+            // 直接交给 ImageView 管理 Bitmap，确保在 TV/模拟器上刷新并显示模糊帧。
+            backgroundView.setImageBitmap(blurredBitmap)
             backgroundView.visibility = View.VISIBLE
         } else {
             DominantColorBackgroundStrategy.apply(backgroundView, source)
@@ -142,26 +144,6 @@ private fun boxBlur(bitmap: Bitmap, radius: Int): Bitmap {
     return out
 }
 
-private class BitmapDrawableCompat(private val bitmap: Bitmap) : Drawable() {
-    private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
-
-    override fun draw(canvas: android.graphics.Canvas) {
-        canvas.drawBitmap(bitmap, null, bounds, paint)
-    }
-
-    override fun setAlpha(alpha: Int) {
-        paint.alpha = alpha
-        invalidateSelf()
-    }
-
-    override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {
-        paint.colorFilter = colorFilter
-        invalidateSelf()
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
-}
 
 private const val BLUR_SCALE = 12
 private const val BLUR_RADIUS = 3

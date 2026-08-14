@@ -2,6 +2,7 @@ package com.baidu.tv.player.kt.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.baidu.tv.player.kt.auth.BaiduAuthService
 import com.baidu.tv.player.kt.location.LocationExtractionService
 import com.baidu.tv.player.kt.model.ImageEffect
 import com.baidu.tv.player.kt.model.PlayMode
@@ -50,6 +51,7 @@ sealed interface SettingsUiEvent {
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val locationExtractionService: LocationExtractionService,
+    private val authService: BaiduAuthService,
 ) : ViewModel() {
 
     val uiState: StateFlow<SettingsUiState> = combine(
@@ -115,6 +117,9 @@ class SettingsViewModel @Inject constructor(
     fun setShowCaptureTime(show: Boolean) = settingsRepository.setShowCaptureTime(show)
 
     fun setBgm(selection: BgmSelection?) = settingsRepository.setBgm(selection)
+
+    /** 清除本地认证信息；页面负责随后跳转到登录页。 */
+    fun logout() = authService.logout()
 
     /**
      * 地点识别测试入口（tasks.md 7.4）：给定媒体 URL 尝试解析地址并通过事件回传。

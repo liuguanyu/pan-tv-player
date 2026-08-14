@@ -16,7 +16,9 @@ import com.baidu.tv.player.kt.databinding.ActivitySettingsBinding
 import com.baidu.tv.player.kt.model.ImageEffect
 import com.baidu.tv.player.kt.model.MediaType
 import com.baidu.tv.player.kt.repository.BgmSelection
+
 import com.baidu.tv.player.kt.ui.filebrowser.FileBrowserActivity
+import com.baidu.tv.player.kt.ui.login.LoginActivity
 import com.baidu.tv.player.kt.model.PlayMode
 import com.baidu.tv.player.kt.ui.playback.image.ImageBackgroundMode
 import dagger.hilt.android.AndroidEntryPoint
@@ -79,6 +81,24 @@ class SettingsActivity : FragmentActivity() {
                 viewModel.setShowCaptureTime(it)
             }
         }
+        binding.rowLogout.setOnClickListener { confirmLogout() }
+    }
+
+    private fun confirmLogout() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.settings_logout)
+            .setMessage(R.string.settings_logout_confirm)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.settings_logout) { _, _ ->
+                viewModel.logout()
+                startActivity(
+                    Intent(this, LoginActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    },
+                )
+                finish()
+            }
+            .show()
     }
 
     private fun collectState() {

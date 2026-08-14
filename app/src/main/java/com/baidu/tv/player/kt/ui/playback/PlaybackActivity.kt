@@ -2,7 +2,6 @@ package com.baidu.tv.player.kt.ui.playback
 
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.drawable.Drawable
 
 import android.os.Bundle
 import android.view.KeyEvent
@@ -59,6 +58,10 @@ private const val THUMBNAIL_CAPTURE_DELAY_MS = 800L
 private const val FIRST_PLAY_RETRY_DELAY_MS = 600L
 private const val TAG = "PlaybackActivity"
 private const val VIDEO_BACKGROUND_MAX_EDGE = 640
+private const val VIDEO_FRAME_CAPTURE_ATTEMPTS = 15
+private const val VIDEO_FRAME_CAPTURE_RETRY_MS = 200L
+private const val VIDEO_FRAME_MIN_BRIGHTNESS = 12
+private const val VIDEO_FRAME_MIN_VISIBLE_PERCENT = 2
 
 /**
  * 播放页（Phase 13）：仅负责 Android 生命周期、View/Surface 渲染、遥控器按键转发和协调器委托。
@@ -87,6 +90,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     private lateinit var quickSelector: QuickSelectorController
     private var autoHideJob: Job? = null
     private var progressJob: Job? = null
+    private var videoBackgroundJob: Job? = null
     private var pendingVideo: Pair<String, FileInfo>? = null
     /** 首次启动可能遇到 Surface/解码器尚未稳定，只对同一文件自动重试一次。 */
     private var retriedFilePath: String? = null
@@ -243,6 +247,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
 
     private suspend fun playVideo(url: String, file: FileInfo) {
         bgmCoordinator.pause()
+        videoBackgroundJob?.cancel()
         pendingVideo = url to file
         binding.imageDisplay.visibility = View.GONE
         // 播放启动路径不要同步抓取 TextureView 全尺寸画面；4K 帧复制会阻塞主线程并显著拖慢加载。
@@ -250,7 +255,7 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
         videoPlayerEngine.stop()
         // loading 转圈 + 背景垫底（竖屏视频左右黑边处显示背景，与图片一致的三种模式）。
         binding.loadingProgress.visibility = View.VISIBLE
-        applyVideoBackground(url)
+        showVideoBackgroundPlaceholder()
         // TextureView 必须保持 VISIBLE 才会持有可用的 SurfaceTexture；缓冲时只隐藏画面，
         // 不能设为 GONE，否则下方 isAvailable 会持续为 false，视频永远无法启动。
         binding.videoSurface.visibility = VideoSurfaceState.BUFFERING.visibility
@@ -278,6 +283,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
                 binding.videoSurface.alpha = VideoSurfaceState.RENDERING.alpha
                 viewModel.setPlaying(true)
                 startProgressUpdates()
+                // 视频画面已开始渲染：用已显示的 TextureView 首帧生成背景，避免再次读取远程视频。
+                applyRenderedVideoFrameAsBackground(url)
                 // 视频画面已开始渲染：此刻才显示三个角信息。
                 viewModel.notifyContentReady()
                 captureVideoThumbnail(file)
@@ -302,42 +309,71 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
     private fun preserveVideoFrameAsBackground() {
         if (!binding.videoSurface.isAvailable) return
         // 背景会被模糊/取主色，无需复制完整 4K 帧；限制尺寸避免播放结束切换时阻塞主线程。
-        val sourceWidth = binding.videoSurface.width.coerceAtLeast(1)
-        val sourceHeight = binding.videoSurface.height.coerceAtLeast(1)
-        val scale = minOf(1f, VIDEO_BACKGROUND_MAX_EDGE.toFloat() / maxOf(sourceWidth, sourceHeight))
-        val frameWidth = (sourceWidth * scale).toInt().coerceAtLeast(1)
-        val frameHeight = (sourceHeight * scale).toInt().coerceAtLeast(1)
-        val frame = binding.videoSurface.getBitmap(frameWidth, frameHeight) ?: return
+        val frame = captureVideoFrame() ?: return
         lifecycleScope.launch {
             ImageBackgroundFactory.fromValue(viewModel.uiState.value.imageBackgroundMode)
                 .apply(binding.imageBackground, frame)
         }
     }
 
-    private fun applyVideoBackground(url: String) {
+    private fun showVideoBackgroundPlaceholder() {
         binding.imageBackground.visibility = View.VISIBLE
-        val mode = viewModel.uiState.value.imageBackgroundMode
-        Glide.with(this)
-            .asBitmap()
-            .load(url)
-            .frame(0)
-            .into(
-                object : com.bumptech.glide.request.target.CustomTarget<Bitmap>() {
-                    override fun onResourceReady(resource: Bitmap, transition: Transition<in Bitmap>?) {
-                        lifecycleScope.launch {
-                            ImageBackgroundFactory.fromValue(mode).apply(binding.imageBackground, resource)
-                        }
-                    }
+        binding.imageBackground.setImageDrawable(null)
+        binding.imageBackground.setBackgroundColor(android.graphics.Color.BLACK)
+    }
 
-                    override fun onLoadFailed(errorDrawable: Drawable?) {
-                        lifecycleScope.launch {
-                            ImageBackgroundFactory.fromValue(mode).apply(binding.imageBackground, null)
-                        }
-                    }
+    /**
+     * 从已经渲染的视频表面取帧作为背景，避免 Glide 对同一个签名视频 URL 发起第二次读取。
+     * 播放器报告成功时 TextureView 可能尚未完成第一帧合成，因此做少量、可取消的重试。
+     */
+    private fun applyRenderedVideoFrameAsBackground(url: String, initialDelayMs: Long = 0L) {
+        videoBackgroundJob?.cancel()
+        videoBackgroundJob = lifecycleScope.launch {
+            if (initialDelayMs > 0L) delay(initialDelayMs)
+            repeat(VIDEO_FRAME_CAPTURE_ATTEMPTS) { attempt ->
+                if (!isActive || pendingVideo?.first != url) return@launch
+                val frame = captureVideoFrame()
+                if (frame != null && hasVisibleVideoPixels(frame)) {
+                    Log.d(TAG, "已从 TextureView 获取视频背景帧，尝试次数=${attempt + 1}")
+                    ImageBackgroundFactory.fromValue(viewModel.uiState.value.imageBackgroundMode)
+                        .apply(binding.imageBackground, frame)
+                    return@launch
+                }
+                if (attempt < VIDEO_FRAME_CAPTURE_ATTEMPTS - 1) delay(VIDEO_FRAME_CAPTURE_RETRY_MS)
+            }
+            Log.d(TAG, "未能从 TextureView 获取视频背景帧，保留黑色背景")
+        }
+    }
 
-                    override fun onLoadCleared(placeholder: Drawable?) {}
-                },
+    private fun captureVideoFrame(): Bitmap? {
+        if (!binding.videoSurface.isAvailable) return null
+        val sourceWidth = binding.videoSurface.width.coerceAtLeast(1)
+        val sourceHeight = binding.videoSurface.height.coerceAtLeast(1)
+        val scale = minOf(1f, VIDEO_BACKGROUND_MAX_EDGE.toFloat() / maxOf(sourceWidth, sourceHeight))
+        return runCatching {
+            binding.videoSurface.getBitmap(
+                (sourceWidth * scale).toInt().coerceAtLeast(1),
+                (sourceHeight * scale).toInt().coerceAtLeast(1),
             )
+        }.getOrNull()
+    }
+
+    /** getBitmap 可能在视频首帧合成前返回全黑占位帧，不能把它当作背景源。 */
+    private fun hasVisibleVideoPixels(bitmap: Bitmap): Boolean {
+        val stepX = (bitmap.width / 16).coerceAtLeast(1)
+        val stepY = (bitmap.height / 16).coerceAtLeast(1)
+        var sampled = 0
+        var visible = 0
+        for (y in 0 until bitmap.height step stepY) {
+            for (x in 0 until bitmap.width step stepX) {
+                val pixel = bitmap.getPixel(x, y)
+                val brightness = (android.graphics.Color.red(pixel) +
+                    android.graphics.Color.green(pixel) + android.graphics.Color.blue(pixel)) / 3
+                sampled++
+                if (brightness > VIDEO_FRAME_MIN_BRIGHTNESS) visible++
+            }
+        }
+        return visible * 100 >= sampled * VIDEO_FRAME_MIN_VISIBLE_PERCENT
     }
 
     private fun showImage(url: String, file: FileInfo) {
@@ -674,6 +710,8 @@ class PlaybackActivity : FragmentActivity(), Media3VideoPlayerEngine.Listener {
             currentVideoWidth = width
             currentVideoHeight = height
             resizeVideoSurface(width, height)
+            // 尺寸稳定后再抓一次，避免 Success 时 TextureView 仍返回黑色/占位帧。
+            pendingVideo?.first?.let { applyRenderedVideoFrameAsBackground(it, initialDelayMs = 250L) }
             if (infoVisible) renderInfoPanel(viewModel.uiState.value)
         }
     }

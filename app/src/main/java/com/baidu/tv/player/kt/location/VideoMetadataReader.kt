@@ -3,11 +3,13 @@ package com.baidu.tv.player.kt.location
 import android.media.MediaMetadataRetriever
 import android.util.Log
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /**
@@ -20,7 +22,7 @@ interface VideoMetadataReader {
      * 从远程视频 URL 读取 ISO6709 位置字符串（[MediaMetadataRetriever.METADATA_KEY_LOCATION]）。
      * 无 metadata 返回 null。异常由调用方处理（此处允许抛出，由上层静默捕获）。
      */
-    suspend fun readLocationString(url: String): String?
+    suspend fun readLocationString(url: String, fileNameHint: String? = null): String?
 
     /**
      * 从远程视频 URL 读取拍摄日期字符串（[MediaMetadataRetriever.METADATA_KEY_DATE]，
@@ -33,15 +35,17 @@ class DefaultVideoMetadataReader @Inject constructor(
     private val quickTimeLocationReader: QuickTimeLocationReader,
 ) : VideoMetadataReader {
 
-    override suspend fun readLocationString(url: String): String? {
-        Log.d(TAG, "启动 Android metadata 与 QuickTime metadata 并行探测")
+    override suspend fun readLocationString(url: String, fileNameHint: String?): String? {
+        val probeOrder = ProbeOrder.fromFileName(fileNameHint)
+        Log.d(TAG, "启动视频位置探测，顺序=$probeOrder")
         return raceValidLocations(
-        platformProbe = {
-            runInterruptible(Dispatchers.IO) {
-                readMetadata(url, MediaMetadataRetriever.METADATA_KEY_LOCATION)
-            }
-        },
+            platformProbe = {
+                runInterruptible(Dispatchers.IO) {
+                    readMetadata(url, MediaMetadataRetriever.METADATA_KEY_LOCATION)
+                }
+            },
             quickTimeProbe = { quickTimeLocationReader.readLocationString(url) },
+            probeOrder = probeOrder,
         )
     }
 
@@ -68,13 +72,33 @@ class DefaultVideoMetadataReader @Inject constructor(
         internal suspend fun raceValidLocations(
             platformProbe: suspend () -> String?,
             quickTimeProbe: suspend () -> String?,
+            probeOrder: ProbeOrder = ProbeOrder.PARALLEL,
         ): String? = coroutineScope {
             val results = Channel<String?>(capacity = 2)
-            val probes = listOf(
-                "AndroidMetadata" to platformProbe,
-                "QuickTimeMetadata" to quickTimeProbe,
-            ).map { (name, probe) ->
+            val primaryFinished = CompletableDeferred<Boolean>()
+            val orderedProbes = when (probeOrder) {
+                ProbeOrder.QUICKTIME_FIRST -> listOf(
+                    Triple("QuickTimeMetadata", quickTimeProbe, 0L),
+                    Triple("AndroidMetadata", platformProbe, STAGGER_DELAY_MS),
+                )
+                ProbeOrder.ANDROID_FIRST -> listOf(
+                    Triple("AndroidMetadata", platformProbe, 0L),
+                    Triple("QuickTimeMetadata", quickTimeProbe, STAGGER_DELAY_MS),
+                )
+                ProbeOrder.PARALLEL -> listOf(
+                    Triple("AndroidMetadata", platformProbe, 0L),
+                    Triple("QuickTimeMetadata", quickTimeProbe, 0L),
+                )
+            }
+            val probes = orderedProbes.mapIndexed { index, (name, probe, delayMs) ->
                 async {
+                    if (delayMs > 0) {
+                        val primarySucceeded = withTimeoutOrNull(delayMs) { primaryFinished.await() }
+                        if (primarySucceeded == true) {
+                            results.send(null)
+                            return@async
+                        }
+                    }
                     val value = try {
                         probe()
                     } catch (e: CancellationException) {
@@ -83,6 +107,7 @@ class DefaultVideoMetadataReader @Inject constructor(
                         null
                     }
                     val validValue = value?.takeIf { LocationExtractor.parseIso6709(it) != null }
+                    if (index == 0) primaryFinished.complete(validValue != null)
                     when {
                         validValue != null -> Log.d(TAG, "视频位置探测命中，来源=$name")
                         value != null -> Log.d(TAG, "视频位置 metadata 不可解析，来源=$name")
@@ -100,6 +125,24 @@ class DefaultVideoMetadataReader @Inject constructor(
             } finally {
                 probes.forEach { it.cancel() }
                 results.close()
+            }
+        }
+
+        private const val STAGGER_DELAY_MS = 500L
+    }
+
+    internal enum class ProbeOrder {
+        QUICKTIME_FIRST,
+        ANDROID_FIRST,
+        PARALLEL;
+
+        companion object {
+            fun fromFileName(fileName: String?): ProbeOrder = when (
+                fileName?.substringAfterLast('.', missingDelimiterValue = "")?.lowercase()
+            ) {
+                "mov" -> QUICKTIME_FIRST
+                "mp4" -> ANDROID_FIRST
+                else -> PARALLEL
             }
         }
     }

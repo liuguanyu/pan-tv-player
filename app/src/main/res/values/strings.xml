@@ -69,6 +69,8 @@
     <string name="settings_show_counter">显示播放计数器</string>
     <string name="settings_show_capture_time">显示拍摄时间</string>
     <string name="settings_show_location_hint">地点仅从媒体元数据(EXIF/视频 metadata)解析，不获取设备定位、不申请位置权限。</string>
+    <string name="settings_logout">退出账号</string>
+    <string name="settings_logout_confirm">确定退出当前百度网盘账号吗？退出后需要重新扫码登录。</string>
     <string name="settings_on">开启</string>
     <string name="settings_off">关闭</string>
     <string name="settings_seconds_format">%1$s 秒</string>
